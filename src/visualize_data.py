@@ -22,12 +22,14 @@ patient_name1 = "patient102"
 file_name1 = "4d"
 
 # Load the .nii.gz file
-data_extracted1= nib.load(data_dir + patient_name1 + "/" + patient_name1 + "_" + file_name1 + ".nii.gz")
-# print(data_extracted1.shape)
+file_name_total = data_dir + patient_name1 + "/" + patient_name1 + "_" + file_name1 + ".nii.gz"
+data_extracted1= nib.load(file_name_total)
+print(file_name_total)
+print(data_extracted1.shape)
 
 # Extract first temporal volume
 data1_t1 = image.index_img(data_extracted1, 0)
-# print(data1_t1.shape)
+print(data1_t1.shape)
 
 # Plotting all t
 def plot_epoch(data_extracted, patient_name):
@@ -44,12 +46,12 @@ def plot_epoch(data_extracted, patient_name):
 # plot_epoch(data_extracted1, patient_name1)
 
 # Plotting others
-file_name2 = "frame01"
-data_extracted2= nib.load(data_dir + patient_name1 + "/" + patient_name1 + "_" + file_name2 + ".nii.gz")
-print(data_extracted2.shape)
-plot_stat_map(
-    data_extracted2,
-    title=patient_name1 + file_name2 ,
-    output_file=images_path+patient_name1 + "_" + file_name2 +".png"
-)
+# file_name2 = "frame01"
+# data_extracted2= nib.load(data_dir + patient_name1 + "/" + patient_name1 + "_" + file_name2 + ".nii.gz")
+# print(data_extracted2.shape)
+# plot_stat_map(
+#     data_extracted2,
+#     title=patient_name1 + file_name2 ,
+#     output_file=images_path+patient_name1 + "_" + file_name2 +".png"
+# )
 
