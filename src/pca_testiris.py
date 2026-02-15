@@ -1,45 +1,52 @@
+# src/pca_testiris.py
+"""
+Script to perform a simple PCA on the IRIS dataset
+"""
+
 from sklearn.datasets import load_iris
+
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import numpy as np
 
-# Load data
+from paths import *
+
+# Load IRIS raw data
 iris = load_iris(as_frame=True)
 print(iris.keys())
 
-# Plot 4D pairplot
+# Plot the pair plot
 iris.frame["target"] = iris.target_names[iris.target]
-# _ = sns.pairplot(iris.frame, hue="target")
-# _.savefig("images/pairplot.png") 
+_ = sns.pairplot(iris.frame, hue="target")
+_.savefig(path_resultimagesfolder+"pairplot.png") 
 
-# PCA
+#  Perform PCA
 pca_1 = PCA(n_components=4)
 X_reduced = pca_1.fit_transform(iris.data)
 
+# Explicative power
 explained_variance = pca_1.explained_variance_ratio_
-
 print("explicative power of each component :", explained_variance)
 print("cumulative explicative power:", explained_variance.cumsum())
 
-# Plot of explicative power 
-
-plt.figure(figsize=(8, 4))
-plt.bar(range(4), explained_variance, alpha=0.7, align='center',
+# Explicative power plot
+def plot_explipower():
+    plt.figure(figsize=(8, 4))
+    plt.bar(range(4), explained_variance, alpha=0.7, align='center',
         label='Individual explicative power', color='b')
 
-plt.step(range(4), explained_variance.cumsum(), where='mid',
-         label='Cumulative explicative power', color='r')
+    plt.step(range(4), explained_variance.cumsum(), where='mid',
+            label='Cumulative explicative power', color='r')
 
-plt.ylabel('Proportion explained variace')
-plt.xlabel('Principal components')
-plt.xticks(range(4), ['PC1', 'PC2', 'PC3', 'PC4'])
-plt.legend(loc='best')
-plt.savefig("images/explained_variance.png")
+    plt.ylabel('Proportion explained variace')
+    plt.xlabel('Principal components')
+    plt.xticks(range(4), ['PC1', 'PC2', 'PC3', 'PC4'])
+    plt.legend(loc='best')
+    plt.savefig(path_resultimagesfolder+"explained_variance.png")
+plot_explipower()
 
-
-# Scatter plots of components 
-
+# PCA plot: components 1&2 (top) and components 3&4 (bottom)
 def plot_pca_2d(X):
     fig, ax = plt.subplots(2,1) 
     ax1, ax2 = ax[0], ax[1]
@@ -89,9 +96,9 @@ def plot_pca_2d(X):
     )
     ax2.add_artist(legend2)
 
-    plt.savefig('images/2d_pcas.png')
+    plt.savefig(path_resultimagesfolder+'PC_2dx2.png')
 
-# plot_pca_2d(X_reduced)
+plot_pca_2d(X_reduced)
 
 
 
