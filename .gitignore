@@ -1,0 +1,6 @@
+.venv/
+.vscode/
+tempodata/
+results/
+*.npy
+*.tar.gz
