@@ -12,12 +12,12 @@ import nibabel as nib # to get the nii format
 from paths import *
 
 # PCA 1: each 3D image as a sample (how voxels co-vary over time, temporal dynamics) -> 30 lines, >100 000 columns (dimensions).
-def pca1_transpose(data_array, print_infos=True):
+def pca1_transpose(data_array, lines =30, print_infos=True):
     """
     From 4D numpy array to a 2D aarray (30, >100000)
     """
     data_transposed = np.transpose(data_array, (3, 0, 1, 2))
-    X = data_transposed.reshape(30, -1)
+    X = data_transposed.reshape(lines, -1)
     if print_infos:
         print("Shape of X:", X.shape)  # Should be (30, >100000)
     return X
@@ -80,23 +80,23 @@ def plot_pca_explipower(pca,patient_name):
     # ax1.set_xlabel('Number of principal components')
     ax1.set_ylabel('Explained variance')
     ax1.set_ylim(0, max(pca.explained_variance_ratio_)*1.1)
-    ax1.set_xticks(range(n_components))
-    ax1.set_xticklabels(range(1, n_components + 1))
+    ax1.set_xticks(range(0, n_components, int(n_components/30)))
+    ax1.set_xticklabels(range(1, n_components + 1, int(n_components/30)))
     ax1.grid(True)
     # plot bot: cumulative explained variance
     cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
     ax2.plot(cumulative_variance, marker='o', linestyle='--')
-    ax2.set_xticks(range(n_components))
-    ax2.set_xticklabels(range(1, n_components + 1))
+    ax2.set_xticks(range(0, n_components, int(n_components/30)))
+    ax2.set_xticklabels(range(1, n_components + 1, int(n_components/30)))
     ax2.set_xlabel('Number of principal components')
     ax2.set_ylabel('Cumulative explained variance')
     ax2.set_ylim(0, 1.05)
     ax2.grid(True)
     #save fig
-    plt.savefig(path_resultsfolder + patient_name + "_PCA1_explainedvariance.png")
+    plt.savefig(path_resultsfolder + patient_name + "_PCA_explainedvariance.png")
 
 
-def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, axisscale_fixed=True):
+def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, scale_str = 'Time (Epoch)', segments = True, axisscale_fixed=True):
     """
     """
     fig, ax1 = plt.subplots(1,1) 
@@ -112,19 +112,20 @@ def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, axisscal
     )
 
     # Plot segments with colormap
-    for i in range(X_reduced.shape[0] - 1):
-        ax1.plot(
-            X_reduced[i:i+2, pc_n1],
-            X_reduced[i:i+2, pc_n2],
-            color=colors[i],
-            linestyle='-',
-            linewidth=1
-        )
+    if segments:
+        for i in range(X_reduced.shape[0] - 1):
+            ax1.plot(
+                X_reduced[i:i+2, pc_n1],
+                X_reduced[i:i+2, pc_n2],
+                color=colors[i],
+                linestyle='-',
+                linewidth=1
+            )
 
     cbar = plt.colorbar(scatter1, ax=ax1)
-    cbar.set_label('Time (Epoch)')
+    cbar.set_label(scale_str)
     cbar.set_ticks(np.linspace(0, 1, 6))
-    cbar.set_ticklabels([f'{i}' for i in np.linspace(0, X_reduced.shape[0]-1, 6, dtype=int)])
+    cbar.set_ticklabels([f'{i+1}' for i in np.linspace(0, X_reduced.shape[0]-1, 6, dtype=int)])
 
     ax1.set(
         title=f"{patient_str} : Principal Components {pc_n1+1} and {pc_n2+1}",
@@ -143,3 +144,109 @@ def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, axisscal
     # ax1.yaxis.set_ticklabels([])
 
     plt.savefig(path_resultsfolder + patient_str + details_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) + ".png")
+
+
+# PCA2 : spatial 
+
+def pca2_reformat(X_reconstructed, data_array, nii_obj_template, patient_index):
+    """
+    """
+    # Reconstruct 4D (all patients)
+    n_patients = data_array.shape[0]
+    spatial_shape = data_array.shape[1:]  # (256,256,10)
+    img4d = X_reconstructed.reshape(n_patients, *spatial_shape)  # (n,256,256,10)
+    # Get image 3D of the patient chosen
+    img3d = img4d[patient_index]  # (256,256,10)
+    nii = nib.Nifti1Image(img3d, nii_obj_template.affine, nii_obj_template.header)
+    return nii
+
+
+
+def plot_pcvalues_2d_meta(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_list, axisscale_fixed=True, extremes_toremove=15):
+    """
+    """
+    fig, ax1 = plt.subplots(1,1) 
+
+    # Color scale for numeric
+    botlimit, toplimit = sorted(metainfo_list)[extremes_toremove],  sorted(metainfo_list)[-extremes_toremove]
+    print(botlimit, toplimit)
+    colors = [max(min((meta_info - botlimit)/(toplimit - botlimit),1),0) for meta_info in metainfo_list]
+
+     # Scatter plot with progressive colors
+    scatter1 = ax1.scatter(
+        X_reduced[:, pc_n1],
+        X_reduced[:, pc_n2],
+        s=40,
+        c= colors,
+        cmap='coolwarm'
+    )
+
+    cbar = plt.colorbar(scatter1, ax=ax1)
+    cbar.set_label(metainfo_str)
+    cbar.set_ticks(np.linspace(0, 1, 6))
+    cbar.set_ticklabels([f'{i}' for i in np.linspace(botlimit, toplimit, 6)])
+
+    ax1.set(
+        title=f"Principal Components {pc_n1+1} and {pc_n2+1} and correlation with patient {metainfo_str}",
+        xlabel=f"Principal Component {pc_n1+1}",
+        ylabel=f" Principal Component {pc_n2+1}")
+
+    if axisscale_fixed :
+        axis1, axis2 = 0, 1 
+    else:
+         axis1, axis2 = pc_n1, pc_n2      
+    x_ticks = np.linspace(-max(abs(min(X_reduced[:, axis1])), max(X_reduced[:, axis1])), max(abs(min(X_reduced[:, axis1])), max(X_reduced[:, axis1])),7)
+    y_ticks = np.linspace(-max(abs(min(X_reduced[:, axis2])), max(X_reduced[:, axis2])), max(abs(min(X_reduced[:, axis2])), max(X_reduced[:, axis2])),7)
+    ax1.set_xticks(x_ticks)
+    ax1.set_yticks(y_ticks)
+    # ax1.xaxis.set_ticklabels([])
+    # ax1.yaxis.set_ticklabels([])
+
+    plt.savefig(path_resultsfolder + "pc_allpatientsepoch0_" + metainfo_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) +".png")
+
+def plot_pcvalues_2d_metacat(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_list, axisscale_fixed=True):
+    """
+    Scatter plot of PC values colored by patient group (categorical).
+    """
+
+    fig, ax1 = plt.subplots(1, 1)
+    groups_unique = sorted(set(metainfo_list))
+    
+    # Choix automatique d'une palette qualitative
+    cmap = plt.get_cmap("tab10")  # bon pour <=10 groupes
+    color_dict = {g: cmap(i % 10) for i, g in enumerate(groups_unique)}
+
+    # Plot group by group
+    for g in groups_unique:
+        indices = [i for i, grp in enumerate(metainfo_list) if grp == g]
+        
+        ax1.scatter(
+            X_reduced[indices, pc_n1],
+            X_reduced[indices, pc_n2],
+            s=40,
+            color=color_dict[g],
+            label=g
+        )
+
+    ax1.set(
+        title=f"Principal Components {pc_n1+1} and {pc_n2+1} and correlation with patient " + metainfo_str,
+        xlabel=f"Principal Component {pc_n1+1}",
+        ylabel=f"Principal Component {pc_n2+1}"
+    )
+
+    ax1.legend(title = metainfo_str)
+
+    # ---- Axis scaling (same logic as yours)
+    if axisscale_fixed:
+        axis1, axis2 = 0, 1
+    else:
+        axis1, axis2 = pc_n1, pc_n2
+
+    max_x = max(abs(X_reduced[:, axis1].min()), abs(X_reduced[:, axis1].max()))
+    max_y = max(abs(X_reduced[:, axis2].min()), abs(X_reduced[:, axis2].max()))
+
+    ax1.set_xticks(np.linspace(-max_x, max_x, 7))
+    ax1.set_yticks(np.linspace(-max_y, max_y, 7))
+
+    plt.savefig(path_resultsfolder + "pc_allpatientsepoch0_" + metainfo_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) +".png")
+
