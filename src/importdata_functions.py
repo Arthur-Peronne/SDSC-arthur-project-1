@@ -34,6 +34,35 @@ def convert_nii_file(nii_obj):
     data_array = nii_obj.get_fdata()
     return data_array
 
+def read_info_cfg(filepath):
+    """
+    """
+    info = {}
+    
+    with open(filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            
+            if not line or ":" not in line:
+                continue  # skip empty lines
+            
+            key, value = line.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            
+            # Try to convert to int or float if possible
+            if value.isdigit():
+                value = int(value)
+            else:
+                try:
+                    value = float(value)
+                except ValueError:
+                    pass  # keep as string
+            
+            info[key] = value
+    
+    return info
+
 # datatype_tochoose_1 = "testing/" # or "training/"
 # patient_name_1 = "patient103"
 # test = extract_nii_file(datatype_tochoose_1, patient_name_1, "4d", print_infos=False)

@@ -19,15 +19,25 @@ def get_oneepoch(nii_obj,epoch_toplot):
     return nii_obj_1t
 
 # Plot 1 epoch 
-def plot_oneepoch(nii_obj_1t, patient_str, print_infos=False, epoch_str = "", details_str=""):
+def plot_oneepoch(nii_obj_1t, patient_str, print_infos=False, epoch_str = "", details_str="", cl_yesno = False, cl = (0,400)):
     """
     """
     # Plot 3D image (x,y,z,) for this epoch
-    plot_stat_map(
-        nii_obj_1t,
-        title= patient_str + " " + epoch_str + " " + details_str,
-        output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
-    )
+    if cl_yesno:
+            plot_stat_map(
+            nii_obj_1t,
+            vmin=cl[0],
+            vmax=cl[1],
+            # cmap="cold_hot,
+            title= patient_str + " " + epoch_str + " " + details_str,
+            output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+        )
+    else:
+        plot_stat_map(
+            nii_obj_1t,
+            title= patient_str + " " + epoch_str + " " + details_str,
+            output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+        )
     if print_infos:
         print("Saved epoch "+ repr(epoch_number))
 
