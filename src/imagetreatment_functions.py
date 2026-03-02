@@ -7,22 +7,25 @@ import nibabel as nib
 from nilearn.image import resample_img
 from nilearn.image import resample_to_img
 import numpy as np 
+import glob
+from pathlib import Path
 
 from paths import *
 import visualizeMRI_functions as vmf
 
 # USER ACTION: Choose patient and file (and epoch if single epoch to plot)
-datatype_tochoose_1 = "training/" #  "testing/" or "training/"
-patient_name_1 = "patient002"
-# file_name_1 = "4d"
-epoch_toplot = 0
+# datatype_tochoose_1 = "training/" #  "testing/" or "training/"
+# patient_name_1 = "patient002"
+# # file_name_1 = "4d"
+# epoch_toplot = 0
 
 
 ### BASIC RESAMPLING 
 
 # Function
 
-def resample_basic(target_img, reference_img, target_shape = (256, 256, 10), savefile=False, plotimage=False):
+def resample_basic(target_img, reference_img, patient_name_1, 
+                                          epoch_toplot = 0, target_shape = (256, 256, 10), savefile=False, plotimage=False):
     # # Load files 
     # reference_img = nib.load(reference_path)
     # target_img = nib.load(target_path)
@@ -31,7 +34,7 @@ def resample_basic(target_img, reference_img, target_shape = (256, 256, 10), sav
         target_img,
         target_affine=reference_img.affine,
         target_shape=target_shape,
-        interpolation='nearest')
+        interpolation='linear')
     # Save modified imaged
     if savefile:
         resampled_path = path_resultsfolder +  patient_name_1 + "_4d_RESAMPLED001.nii.gz" 
@@ -43,6 +46,79 @@ def resample_basic(target_img, reference_img, target_shape = (256, 256, 10), sav
         resampled_img_1t = vmf.get_oneepoch(resampled_img, epoch_toplot)
         vmf.plot_oneepoch(resampled_img_1t, patient_name_1, epoch_str = "_epoch0", details_str="RESAMPLED001")
     return resampled_img
+
+
+def crop_heartzone_oneimage(nii_img, nii_mask):
+    """
+    """
+    # Resample mask 
+    nii_mask_resampled = resample_to_img(nii_mask, nii_img, interpolation="nearest")
+    # Crop image
+    data_img = nii_img.get_fdata()
+    data_mask = nii_mask_resampled.get_fdata()   # returns a float64 numpy array (X,Y,Z) or (X,Y,Z,T)
+    region_to_keep = (data_mask != 0)
+    data_cropped= data_img.copy()
+    data_cropped[~region_to_keep] = np.nan
+    nii_cropped = nib.Nifti1Image(data_cropped, affine=nii_img.affine)
+    return nii_cropped
+
+def loaddata_tocrop():
+    """
+    """
+    # training_files = glob.glob(path_datadir + "training/patient*/patient*_frame*.nii.gz")
+    # testing_files = glob.glob(path_datadir + "testing/patient*/patient*_frame*.nii.gz")
+    # all_files = training_files + testing_files # and optional: all_files.sort() 
+    
+    training_img = glob.glob(path_datadir + "training/patient*/patient*_frame[0-9][0-9].nii.gz")
+    testing_img  = glob.glob(path_datadir + "testing/patient*/patient*_frame[0-9][0-9].nii.gz")
+    all_img = training_img + testing_img
+
+    training_gt = glob.glob(path_datadir + "training/patient*/patient*_frame*_gt.nii.gz")
+    testing_gt  = glob.glob(path_datadir + "testing/patient*/patient*_frame*_gt.nii.gz")
+    all_gt = training_gt + testing_gt
+
+    return all_img, all_gt
+
+def crop_heartzone_allpatients(limit = 1000):
+    # Load all image and gt paths
+    all_img, all_gt = loaddata_tocrop()
+    for i in range(min(len(all_img), limit)):
+        # Load nii from paths, and crop images from gt masks
+        nii_img= nib.load(all_img[i])
+        nii_mask= nib.load(all_gt[i])
+        nii_cropped = crop_heartzone_oneimage(nii_img, nii_mask)
+        # Recover patient and frame names to save in tempo data 
+        path = Path(all_img[i])
+        patient_id = path.parent.name
+        frame_id = path.stem.split("_")[1]
+        save_path = path_tempodata_folder + "cropped_nii/" + patient_id +  "_" + frame_id + "_cropped.nii.gz"
+        nib.save(nii_cropped, save_path)
+
+def plot_cropped_files(limit = 10):
+    cropped_nii_paths = glob.glob(path_tempodata_folder + "cropped_nii/*.nii.gz")
+    for (i,nii_path) in enumerate(cropped_nii_paths):
+        # Load nii
+        nii_cropped= nib.load(nii_path)
+        # Get infos and plot+save
+        path = Path(nii_path)
+        stem = path.stem          # 'patient150_frame01.nii'
+        stem = Path(stem).stem    # removes .nii → 'patient150_frame01'
+        parts = stem.split("_")
+        patient_from_filename = parts[0]   # 'patient150'    frame_id = path.stem.split("_")[1]
+        frame_id = parts[1]  
+        # Plot
+        vmf.plot_oneepoch(nii_cropped, patient_from_filename, oldstyle=False, epoch_str = "_" + frame_id + "_", details_str= "cropped")
+        if i > limit:
+            break
+
+
+
+
+
+
+
+
+
 
 
 # def resample_basic_3d(target_img_3d, reference_img_3d, target_shape = (256, 256, 10), interpolation="linear"):
@@ -57,10 +133,10 @@ def resample_basic(target_img, reference_img, target_shape = (256, 256, 10), sav
 
 
 # Test
-reference_path= path_datadir + "training/patient001/patient001_4d.nii.gz" # For reference
-target_path = path_datadir + datatype_tochoose_1 + patient_name_1 + "/" +  patient_name_1 + "_4d.nii.gz"  # For image
-reference_img = nib.load(reference_path)
-target_img = nib.load(target_path)
+# reference_path= path_datadir + "training/patient001/patient001_4d.nii.gz" # For reference
+# target_path = path_datadir + datatype_tochoose_1 + patient_name_1 + "/" +  patient_name_1 + "_4d.nii.gz"  # For image
+# reference_img = nib.load(reference_path)
+# target_img = nib.load(target_path)
 # test = resample_basic(target_img, reference_img, savefile=True, plotimage=True)
 # print(type(test))
 # print(test.shape)
@@ -70,6 +146,14 @@ target_img = nib.load(target_path)
 # testbis = resample_basic_3d(target_img, reference_img)
 # print(type(testbis))
 # print(testbis.shape)
+
+
+
+
+
+
+
+
 
 # # Load reference image -> Patient 001
 # reference_path= path_datadir + "training/patient001/patient001_4d.nii.gz" # For reference
@@ -95,6 +179,11 @@ target_img = nib.load(target_path)
 # vmf.plot_oneepoch(target_img_1t, patient_name_1, epoch_str = "_epoch0", details_str="")
 # resampled_img_1t = vmf.get_oneepoch(resampled_img, epoch_toplot)
 # vmf.plot_oneepoch(resampled_img_1t, patient_name_1, epoch_str = "_epoch0", details_str="RESAMPLED001")
+
+
+
+
+
 
 
 ### COMPLEX IMAGE TRANSFORMATION -> IN PROGRESS
@@ -144,16 +233,16 @@ target_img = nib.load(target_path)
 #     fixed = sitk.Cast(fixed, sitk.sitkFloat32)
 #     moving = sitk.Cast(moving, sitk.sitkFloat32)
 
-#     # --- Registration ---
-#     registration = sitk.ImageRegistrationMethod()
-#     registration.SetMetricAsMattesMutualInformation(50)
-#     registration.SetOptimizerAsGradientDescent(
-#         learningRate=1.0,
-#         numberOfIterations=200,
-#         convergenceMinimumValue=1e-6,
-#         convergenceWindowSize=10
-#     )
-#     registration.SetInterpolator(sitk.sitkLinear)
+    # --- Registration ---
+    # registration = sitk.ImageRegistrationMethod()
+    # registration.SetMetricAsMattesMutualInformation(50)
+    # registration.SetOptimizerAsGradientDescent(
+    #     learningRate=1.0,
+    #     numberOfIterations=200,
+    #     convergenceMinimumValue=1e-6,
+    #     convergenceWindowSize=10
+    # )
+    # registration.SetInterpolator(sitk.sitkLinear)
 
 #     initial_transform = sitk.CenteredTransformInitializer(
 #         fixed, moving,
