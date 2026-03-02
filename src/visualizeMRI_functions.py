@@ -5,11 +5,15 @@ Functions to visualize MRI images
 
 import numpy as np
 from nilearn import image
+from nilearn.image import resample_to_img
+from nilearn import plotting
 from nilearn.plotting import plot_stat_map, show
-import nibabel as nib # to get the nii format
+import nibabel as nib 
 from nibabel.affines import apply_affine
+import matplotlib.pyplot as plt
 
 from paths import *
+import importdata_functions as idf
 
 # Get single epoch 
 def get_oneepoch(nii_obj,epoch_toplot):
@@ -19,25 +23,42 @@ def get_oneepoch(nii_obj,epoch_toplot):
     return nii_obj_1t
 
 # Plot 1 epoch 
-def plot_oneepoch(nii_obj_1t, patient_str, print_infos=False, epoch_str = "", details_str="", cl_yesno = False, cl = (0,400)):
+def plot_oneepoch(nii_obj_1t, patient_str, oldstyle=True, print_infos=False, epoch_str = "", details_str="", cl_yesno = False, cl = (0,400)):
     """
     """
     # Plot 3D image (x,y,z,) for this epoch
-    if cl_yesno:
+    if oldstyle == True:
+        if cl_yesno:
+                plot_stat_map(
+                nii_obj_1t,
+                vmin=cl[0],
+                vmax=cl[1],
+                title= patient_str + " " + epoch_str + " " + details_str,
+                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+            )
+        else:
             plot_stat_map(
-            nii_obj_1t,
-            vmin=cl[0],
-            vmax=cl[1],
-            # cmap="cold_hot,
-            title= patient_str + " " + epoch_str + " " + details_str,
-            output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
-        )
-    else:
-        plot_stat_map(
-            nii_obj_1t,
-            title= patient_str + " " + epoch_str + " " + details_str,
-            output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
-        )
+                nii_obj_1t,
+                title= patient_str + " " + epoch_str + " " + details_str,
+                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+            )
+    else : 
+        if cl_yesno:
+                plot_stat_map(
+                nii_obj_1t,
+                cmap = "plasma",
+                vmin=cl[0],
+                vmax=cl[1],
+                title= patient_str + " " + epoch_str + " " + details_str,
+                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+            )
+        else:
+            plot_stat_map(
+                nii_obj_1t,
+                cmap = "plasma",
+                title= patient_str + " " + epoch_str + " " + details_str,
+                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+            )
     if print_infos:
         print("Saved epoch "+ repr(epoch_number))
 
@@ -85,3 +106,68 @@ def voxels_coordinates(nii_obj):
     print("Unique x positions:", unique_x)
     print("Unique y positions:", unique_y)
     print("Unique z positions:", unique_z)
+
+def plot_masks(datatype_tochoose, patient_name, file_name_img, plot_ref=True, plot_refandmask=True, plot_onlymasked=True):
+    """
+    """
+    # Extract nii object and reference
+    nii_obj_img = idf.extract_nii_file(datatype_tochoose, patient_name, file_name_img)
+    file_name_mask = file_name_img + "_gt" # "4d" or "frame01_gt" or "frame_1" or "frameXX_gt" or "frame_XX"
+    nii_obj_mask = idf.extract_nii_file(datatype_tochoose, patient_name, file_name_mask, print_infos=True)
+
+    # Plot img for reference 
+    # Scale
+    if plot_ref or plot_refandmask:
+        img_data = nii_obj_img.get_fdata()
+        finite = np.isfinite(img_data)
+        vmin, vmax = np.percentile(img_data[finite], (2, 98))  
+        # Plot and save 
+        display = plotting.plot_anat(
+            nii_obj_img,
+            title= file_name_img + " and mask",
+            vmin=vmin, vmax=vmax,
+        )
+        if plot_ref:
+            display.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_raw" + ".png")
+    # Plot img + mask 
+        if plot_refandmask:
+            mask_r = resample_to_img(nii_obj_mask, nii_obj_img, interpolation="nearest")
+            display.add_overlay(mask_r, transparency=0.5)
+            display.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_superposition" + ".png")
+        display.close()
+    # Plot only elements in mask 
+    if plot_onlymasked:
+        mask_data = nii_obj_mask.get_fdata()   # returns a float64 numpy array (X,Y,Z) or (X,Y,Z,T)
+        region = (mask_data != 0)
+        filtered_nan = img_data.copy()
+        filtered_nan[~region] = np.nan
+        filtered_img = nib.Nifti1Image(filtered_nan, affine=nii_obj_img.affine)
+        display_masked = plotting.plot_anat(
+            filtered_img,
+            title= file_name_img + " region of interest (heart) only",
+            vmin=vmin, vmax=vmax)
+        display_masked.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_onlymasked" +".png")
+        display_masked.close()
+
+
+def plot_one_t_bw(nii_img_1t, print_infos=False, patient_str ="", file_str = "", details_str=""):
+    """
+    """
+    # Color limits 
+    data_img = nii_img_1t.get_fdata()
+    finite = np.isfinite(data_img)
+    vmin, vmax = np.percentile(data_img[finite], (2, 98))  
+    # Plot 3D 
+    cmap = plt.get_cmap("plasma").copy()
+    cmap.set_bad(color="white")   # NaNs -> white
+    display = plotting.plot_anat(
+        nii_img_1t,
+        cmap="plasma",
+        black_bg=True,
+        vmin=vmin, vmax=vmax,
+        title= patient_str + " " + file_str + " " + details_str)
+    # Save 
+    output_file = path_resultsfolder + patient_str + file_str + details_str + ".png"
+    display.savefig(output_file)
+    if print_infos:
+        print("Image saved in " + output_file)

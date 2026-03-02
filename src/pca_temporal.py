@@ -15,32 +15,33 @@ import nibabel as nib # to get the nii format
 
 # USER ACTION:
 # Data to work from 
-datatype_tochoose_1 = "testing/" # or "training/"
-patient_name_1 = "patient104"
+datatype_tochoose_1 = "training/" # or "training/"
+patient_name_1 = "patient099"
 # PCA 
-max_pc_calc = 100
+max_pc_calc = 5
 # Explained variance infos and principal components in eigenbase
 do_explainedvariance = False 
 do_pcineigenbase= False 
-pc_n1, pc_n2 = 8,9
+pc_n1, pc_n2 = 0,1
 # Reconstruction 
 do_reconstruction = False
 n_pc_toreconstruct = 5
-epochs_to_plot = 3
+epochs_to_plot = 2
 # Eigenvector plot 
-do_eigenvecplot = False 
+do_eigenvecplot = True 
 
 
 # Extract nii file and convert it to Numpy array
 nii_obj = idf.extract_nii_file(datatype_tochoose_1, patient_name_1, "4d", print_infos=False)
 data_array = idf.convert_nii_file(nii_obj)
 
+print(data_array.shape[3])
 #1 PCA temporal: each 3D image as a sample (how voxels co-vary over time, temporal dynamics) -> 30 lines, >100 000 columns (dimensions).
 
 # PCA CALCULATION 
 # Prepare data
 X = pf.pca1_transpose(data_array, print_infos=False) # to put temporal dimension t as 1st dimension and everything else in second dimension
-X_scaled, scaler, removed_features_mask = pf.pca1_normalize(X) # 
+X_scaled = X - np.mean(X, axis=0, keepdims=True)
 # Do PCA 
 pca1 = PCA(n_components=min(nii_obj.shape[3], max_pc_calc))  # Get all principal components (all t, since it limits in this case) or less if asked
 X_reduced = pca1.fit_transform(X_scaled)
@@ -50,12 +51,12 @@ if do_explainedvariance:
     pf.plot_pca_explipower(pca1, patient_name_1)
 # Plot pc values in eigenvector base 
 if do_pcineigenbase:
-    pf.plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_name_1, "_pc_in_eigenbase") #axisscale_fixed=False
+    pf.plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_name_1, "_pc_in_eigenbase", axisscale_fixed=False) #axisscale_fixed=False
 
 # IMAGE RECONSTRUCTION
 if do_reconstruction:
     # Reconstruct image - and residuals - using only n components
-    X_reconstructed = pf.pca1_reconstruct(X_reduced, X, pca1, n_pc_toreconstruct, scaler, removed_features_mask)
+    X_reconstructed = X_reduced[:, :n_pc_toreconstruct] @ pca1.components_[:n_pc_toreconstruct, :] + np.mean(X, axis=0, keepdims=True)
     X_residuals = X - X_reconstructed
     # Re-shapping reconstructed data into original nii format 
     nii_reconstructed = pf.pca1_reformat(X_reconstructed, data_array, nii_obj, patient_name_1, n_pc_toreconstruct)
@@ -75,8 +76,9 @@ if do_eigenvecplot:
     # Every eigenvector
     for n_eigen in range(min(nii_obj.shape[3], max_pc_calc)):
     # n_eigen_toplot = 1 # must be < n_pca
-        eigenvector_full = np.zeros((1, X.shape[1]))
-        eigenvector_full[:, removed_features_mask] = pca1.components_[n_eigen, :]
+        # eigenvector_full = np.zeros((1, X.shape[1]))
+        # eigenvector_full[:, removed_features_mask] = pca1.components_[n_eigen, :]
+        eigenvector_full = pca1.components_[n_eigen, :]
         vmf.from_longvec_to_image(eigenvector_full, data_array.shape[:-1], nii_obj, patient_name_1, f"_eigenvector_{n_eigen+1}")
 
     # eigenvector = pca1.components_[n_eigen_toplot, :]

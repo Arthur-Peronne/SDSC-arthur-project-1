@@ -12,39 +12,39 @@ import nibabel as nib # to get the nii format
 from paths import *
 
 # PCA 1: each 3D image as a sample (how voxels co-vary over time, temporal dynamics) -> 30 lines, >100 000 columns (dimensions).
-def pca1_transpose(data_array, lines =30, print_infos=True):
+def pca1_transpose(data_array, print_infos=True):
     """
     From 4D numpy array to a 2D aarray (30, >100000)
     """
     data_transposed = np.transpose(data_array, (3, 0, 1, 2))
-    X = data_transposed.reshape(lines, -1)
+    X = data_transposed.reshape(data_array.shape[3], -1)
     if print_infos:
         print("Shape of X:", X.shape)  # Should be (30, >100000)
     return X
 
-def pca1_normalize(X, select=VarianceThreshold(), scale=StandardScaler()):
-    """
-    """
-    selector = select
-    X_filtered = selector.fit_transform(X)
-    removed_features_mask = selector.get_support(indices=False)  # Mask of features that were NOT removed
-    scaler = scale
-    X_scaled = scaler.fit_transform(X_filtered)
-    return  X_scaled, scaler, removed_features_mask
+# def pca1_normalize(X, select=VarianceThreshold(), scale=StandardScaler()):
+#     """
+#     """
+#     selector = select
+#     X_filtered = selector.fit_transform(X)
+#     removed_features_mask = selector.get_support(indices=False)  # Mask of features that were NOT removed
+#     scaler = scale
+#     X_scaled = scaler.fit_transform(X_filtered)
+#     return  X_scaled, scaler, removed_features_mask
 
-def pca1_reconstruct(X_reduced, X, pca, n, scaler, removed_features_mask):
-    """
-    """
-    # Transformed data (only first n columns, shape (30,n)) times eigen_vectors (only first n rows, shape(n,>100000) -> shape (30, >100000), OK!
-    X_reconstructed_scaled = X_reduced[:, :n] @ pca.components_[:n, :]
-    # Reverse normalization
-    X_reconstructed_filtered = scaler.inverse_transform(X_reconstructed_scaled)
-    # Re-add constant features removed before PCA
-    X_reconstructed = np.zeros_like(X)
-    X_reconstructed[:, removed_features_mask] = X_reconstructed_filtered # features not removed
-    removed_features_mean = np.mean(X[:, ~removed_features_mask], axis=0) # re-calculation of removed features
-    X_reconstructed[:, ~removed_features_mask] = np.tile(removed_features_mean, (X.shape[0], 1)) # 
-    return X_reconstructed
+# def pca1_reconstruct(X_reduced, X, pca, n, scaler, removed_features_mask):
+#     """
+#     """
+#     # Transformed data (only first n columns, shape (30,n)) times eigen_vectors (only first n rows, shape(n,>100000) -> shape (30, >100000), OK!
+#     X_reconstructed_scaled = X_reduced[:, :n] @ pca.components_[:n, :]
+#     # Reverse normalization
+#     X_reconstructed_filtered = scaler.inverse_transform(X_reconstructed_scaled)
+#     # Re-add constant features removed before PCA
+#     X_reconstructed = np.zeros_like(X)
+#     X_reconstructed[:, removed_features_mask] = X_reconstructed_filtered # features not removed
+#     removed_features_mean = np.mean(X[:, ~removed_features_mask], axis=0) # re-calculation of removed features
+#     X_reconstructed[:, ~removed_features_mask] = np.tile(removed_features_mean, (X.shape[0], 1)) # 
+#     return X_reconstructed
 
 def pca1_reformat(X_reconstructed, data_array, nii_obj, patient_name_1, n_pc_toreconstruct, save=True):
     """
@@ -169,7 +169,7 @@ def plot_pcvalues_2d_meta(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_list, 
 
     # Color scale for numeric
     botlimit, toplimit = sorted(metainfo_list)[extremes_toremove],  sorted(metainfo_list)[-extremes_toremove]
-    print(botlimit, toplimit)
+    # print(botlimit, toplimit)
     colors = [max(min((meta_info - botlimit)/(toplimit - botlimit),1),0) for meta_info in metainfo_list]
 
      # Scatter plot with progressive colors
