@@ -58,69 +58,46 @@ if cropandsave_all:
 # path_file2 = path_tempodata_folder  + "cropped_nii/patient"+patient2+"_frame01.nii_cropped.nii.gz"
 # img1 = nib.load(path_file)
 # img2 = nib.load(path_file2)
-patient1 = "099"
+patient1 = "005"
 path_file = path_datadir  + "training/patient" + patient1 + "/patient" + patient1 + "_frame01_gt.nii.gz"
 img1= nib.load(path_file)
-data_3d = img1.get_fdata()
-print(np.unique(data_3d))
+# data_3d = img1.get_fdata()
+# print(np.unique(data_3d))
 # path_file2 = path_tempodata_folder  + "cropped_nii/patient" + patient1 + "_frame01.nii_cropped.nii.gz"
 # img2= nib.load(path_file2)
 # data_3d2= img2.get_fdata()
 # print(np.unique(data_3d2))
 
-print(img1.header)
-
-def bbox_from_masked_nan(img, filtered="zeros"):
-    """
-    data_3d: numpy array (X,Y,Z) with NaN outside ROI, finite inside.
-    Returns (xmin, xmax, ymin, ymax, zmin, zmax) and sizes (Nx,Ny,Nz).
-
-    filtered="zeros" or "Nans"
-    """
-    data_3d = img.get_fdata()
-
-    if filtered == "zeros":
-        roi = (data_3d>0)
-    else :
-        roi = np.isfinite(data_3d)
-
-    coords = np.where(roi)
-    xmin, xmax = coords[0].min(), coords[0].max()
-    ymin, ymax = coords[1].min(), coords[1].max()
-    zmin, zmax = coords[2].min(), coords[2].max()
-
-    Nx = xmax - xmin + 1
-    Ny = ymax - ymin + 1
-    Nz = zmax - zmin + 1
-
-    return (xmin, xmax, ymin, ymax, zmin, zmax), (Nx, Ny, Nz)
+# print(img1.header)
+# print(img1.affine)
+# print(img1.header.get_zooms())
 
 # data_3d = img1.get_fdata()
 # print(np.unique(data_3d))
-bbox, size = bbox_from_masked_nan(img1)
-print("bbox:", bbox)
-print("size (Nx,Ny,Nz):", size)
+# bbox, size = itf.bbox_from_masked_nan(img1)
+# print("bbox:", bbox)
+# print("size (Nx,Ny,Nz):", size)
 # bbox, size = bbox_from_masked_nan(img2, filtered="nans")
 # print("bbox:", bbox)
 # print("size (Nx,Ny,Nz):", size)
 
-gt = np.asanyarray(img1.dataobj)
-cropped = gt[bbox[0]:bbox[1]+1, bbox[2]:bbox[3]+1, bbox[4]:bbox[5]+1]
-cropped_nii = nib.Nifti1Image(cropped, img1.affine, img1.header)
+# gt = np.asanyarray(img1.dataobj)
+# cropped = gt[bbox[0]:bbox[1]+1, bbox[2]:bbox[3]+1, bbox[4]:bbox[5]+1]
+# cropped_nii = nib.Nifti1Image(cropped, img1.affine, img1.header)
 
-from nilearn.image import resample_img
+# from nilearn.image import resample_img
 
-# target_affine = cropped_nii.affine
-# target_shape=(96,96,12)
-img_res = resample_img(
-    cropped_nii,
-    target_affine=cropped_nii.affine,
-    target_shape=(96,96,12),
-    interpolation="nearest"
-)
-bbox, size = bbox_from_masked_nan(img_res)
-print("bbox:", bbox)
-print("size (Nx,Ny,Nz):", size)
+# # target_affine = cropped_nii.affine
+# # target_shape=(96,96,12)
+# img_res = resample_img(
+#     cropped_nii,
+#     target_affine=cropped_nii.affine,
+#     target_shape=(96,96,12),
+#     interpolation="nearest"
+# )
+# bbox, size = bbox_from_masked_nan(img_res)
+# print("bbox:", bbox)
+# print("size (Nx,Ny,Nz):", size)
 
 
 # def centroid_from_cropped_nan(img_nii):

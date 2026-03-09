@@ -111,7 +111,30 @@ def plot_cropped_files(limit = 10):
         if i > limit:
             break
 
+def bbox_from_masked_nan(img, filtered="zeros"):
+    """
+    data_3d: numpy array (X,Y,Z) with NaN outside ROI, finite inside.
+    Returns (xmin, xmax, ymin, ymax, zmin, zmax) and sizes (Nx,Ny,Nz).
 
+    filtered="zeros" or "Nans"
+    """
+    data_3d = img.get_fdata()
+
+    if filtered == "zeros":
+        roi = (data_3d>0)
+    else :
+        roi = np.isfinite(data_3d)
+
+    coords = np.where(roi)
+    xmin, xmax = coords[0].min(), coords[0].max()
+    ymin, ymax = coords[1].min(), coords[1].max()
+    zmin, zmax = coords[2].min(), coords[2].max()
+
+    Nx = xmax - xmin + 1
+    Ny = ymax - ymin + 1
+    Nz = zmax - zmin + 1
+
+    return (xmin, xmax, ymin, ymax, zmin, zmax), (Nx, Ny, Nz)
 
 
 
