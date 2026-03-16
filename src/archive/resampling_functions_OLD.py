@@ -29,26 +29,22 @@ def _axis_signs_from_affine(affine: np.ndarray) -> tuple[float, float, float]:
     return (signs[0], signs[1], signs[2])
 
 def _make_sitk_from_nib(nib_img):
-    """Convert nibabel image to SimpleITK image, preserving geometry."""
-    data = nib_img.get_fdata(dtype=np.float32)
-    zooms = nib_img.header.get_zooms()[:3]
+    """Convert nibabel image to SimpleITK image, forcing clean geometry."""
+    data = nib_img.get_fdata(dtype=np.float32)  # for frame (intensity)
+    zooms = nib_img.header.get_zooms()[:3]      # (sx, sy, sz) in mm
 
-    # Nibabel array is (X,Y,Z). SimpleITK expects (Z,Y,X).
+    # Nibabel array is (X,Y,Z). SimpleITK expects (Z,Y,X) in GetImageFromArray.
     data_zyx = np.transpose(data, (2, 1, 0))
+    # print(data.shape)
+    # print(data_zyx.shape)
+
     img = sitk.GetImageFromArray(data_zyx)
 
     img.SetSpacing(tuple(float(z) for z in zooms))
-
-    affine = nib_img.affine
-    img.SetOrigin(tuple(float(v) for v in affine[:3, 3]))
-
-    sign_x, sign_y, sign_z = _axis_signs_from_affine(affine)
-    img.SetDirection((
-        sign_x, 0.0,   0.0,
-        0.0,   sign_y, 0.0,
-        0.0,   0.0,   sign_z
-    ))
-
+    img.SetOrigin((0.0, 0.0, 0.0))
+    img.SetDirection((1.0, 0.0, 0.0,
+                      0.0, 1.0, 0.0,
+                      0.0, 0.0, 1.0))
     return img
 
 def _resample_sitk(img, target_spacing, is_label=False):

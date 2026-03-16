@@ -43,29 +43,40 @@ import visualizeMRI_functions as vmf
 
 # REGISTRATION 
 # ref = "patient001"
-# mov = "patient022"
-# fixed_img_nii = nib.load(path_tempodata_folder + "cropped_frames/" + ref + "_frame01_cropped.nii.gz")
-# fixed_mask_nii = nib.load(path_tempodata_folder + "cropped_frames/" + ref + "_frame01_cropped_gt.nii.gz")
-# moving_img_nii = nib.load(path_tempodata_folder + "cropped_frames/" + mov + "_frame01_cropped.nii.gz")
-# moving_mask_nii = nib.load(path_tempodata_folder + "cropped_frames/" + mov + "_frame01_cropped_gt.nii.gz")
-# reg_img_nii, reg_mask_nii, T = rgf.rigid_register_one_patient(fixed_img_nii, fixed_mask_nii, moving_img_nii, moving_mask_nii)
+# mov = "patient003"
+# fixed_img_full_nii = nib.load(path_tempodata_folder + "resampled_frames/" + ref + "_frame01_resampled.nii.gz")
+# fixed_mask_full_nii = nib.load(path_tempodata_folder + "resampled_frames/" + ref + "_frame01_resampled_gt.nii.gz")
+# fixed_img_crop_nii = nib.load(path_tempodata_folder + "cropped_frames/" + ref + "_frame01_cropped.nii.gz")
+# fixed_mask_crop_nii = nib.load(path_tempodata_folder + "cropped_frames/" + ref + "_frame01_cropped_gt.nii.gz")
+# moving_img_full_nii = nib.load(path_tempodata_folder + "resampled_frames/" + mov + "_frame01_resampled.nii.gz")
+# moving_mask_full_nii = nib.load(path_tempodata_folder + "resampled_frames/" + mov + "_frame01_resampled_gt.nii.gz")
+# moving_img_crop_nii = nib.load(path_tempodata_folder + "cropped_frames/" + mov + "_frame01_cropped.nii.gz")
+# moving_mask_crop_nii = nib.load(path_tempodata_folder + "cropped_frames/" + mov + "_frame01_cropped_gt.nii.gz")
+# reg_img_full_nii, reg_mask_full_nii, T = rgf.rigid_register_one_patient(fixed_img_full_nii, fixed_mask_full_nii, fixed_mask_crop_nii, moving_mask_crop_nii, moving_img_full_nii, moving_mask_full_nii)
+# reg_img_nii, reg_mask_nii = rgf.crop_to_reference_window(reg_img_full_nii, reg_mask_full_nii, fixed_img_crop_nii)
 # rgf.print_rigid_transform_info(T)
-# # Plot registration and compare
-# vmf.plot_oneimg(fixed_img_nii, patient_str =ref, file_str ="IMG", details_str="reference")
-# vmf.plot_onemask(fixed_mask_nii, patient_str =ref, file_str ="MASK", details_str="reference")
-# vmf.plot_oneimagemask(fixed_img_nii, fixed_mask_nii, patient_str =ref, file_str ="SUP", details_str="reference")
-# vmf.plot_oneimg(moving_img_nii, patient_str =mov, file_str ="IMG", details_str="original")
-# vmf.plot_onemask(moving_mask_nii, patient_str =mov, file_str ="MASK", details_str="original")
-# vmf.plot_oneimagemask(moving_img_nii, moving_mask_nii, patient_str =mov, file_str ="SUP", details_str="original")
+# Plot registration and compare
+# vmf.plot_oneimg(fixed_img_full_nii, patient_str =ref, file_str ="IMG", details_str="referenceFULL")
+# vmf.plot_onemask(fixed_mask_full_nii, patient_str =ref, file_str ="MASK", details_str="referenceFULL")
+# vmf.plot_oneimagemask(fixed_img_full_nii, fixed_mask_full_nii, patient_str =ref, file_str ="SUP", details_str="referenceFULL")
+# vmf.plot_oneimg(fixed_img_crop_nii, patient_str =ref, file_str ="IMG", details_str="referenceCROP")
+# vmf.plot_onemask(fixed_mask_crop_nii, patient_str =ref, file_str ="MASK", details_str="referenceCROP")
+# vmf.plot_oneimagemask(fixed_img_crop_nii, fixed_mask_crop_nii, patient_str =ref, file_str ="SUP", details_str="referenceCROP")
+# vmf.plot_oneimg(moving_img_full_nii, patient_str =mov, file_str ="IMG", details_str="originalFULL")
+# vmf.plot_onemask(moving_mask_full_nii, patient_str =mov, file_str ="MASK", details_str="originalFULL")
+# vmf.plot_oneimagemask(moving_img_full_nii, moving_mask_full_nii, patient_str =mov, file_str ="SUP", details_str="originalFULL")
+# vmf.plot_oneimg(moving_img_crop_nii, patient_str =mov, file_str ="IMG", details_str="originalCROP")
+# vmf.plot_onemask(moving_mask_crop_nii, patient_str =mov, file_str ="MASK", details_str="originalCROP")
+# vmf.plot_oneimagemask(moving_img_crop_nii, moving_mask_crop_nii, patient_str =mov, file_str ="SUP", details_str="originalCROP")
 # vmf.plot_oneimg(reg_img_nii, patient_str =mov, file_str ="IMG", details_str="registered")
 # vmf.plot_onemask(reg_mask_nii, patient_str =mov, file_str ="MASK", details_str="registered")
 # vmf.plot_oneimagemask(reg_img_nii, reg_mask_nii, patient_str =mov, file_str ="SUP", details_str="registered")
-# vmf.plot_oneimagemask(fixed_img_nii, reg_mask_nii, patient_str = mov+"mixed", file_str ="SUP", details_str="regmask_refimg")
-# vmf.plot_oneimagemask(fixed_mask_nii, reg_mask_nii, patient_str = mov+"mixed", file_str ="SUP", details_str="regmask_refmask")
-# # Registration for all
+# vmf.plot_oneimagemask(fixed_img_crop_nii, reg_mask_nii, patient_str = mov+"mixed", file_str ="SUP", details_str="regmask_refimg")
+# vmf.plot_oneimagemask(fixed_mask_crop_nii, reg_mask_nii, patient_str = mov+"mixed", file_str ="SUP", details_str="regmask_refmask")
+# Registration for all
 # rgf.register_all_frames()
 
-# DICE 
-# results_list = rgf.dice_all_patients()
+#  DICE 
+# results_list = rgf.dice_all_patients(registered_folder="registered_framesBIS")
 # stats = rgf.stats_dice(results_list)
 # print(results_list, stats)
