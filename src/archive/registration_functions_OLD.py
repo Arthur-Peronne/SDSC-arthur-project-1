@@ -211,73 +211,6 @@ def crop_pad_around_centroid(img_nii, mask_nii, centroid, crop_shape=(128, 128, 
 
     return img_crop_nii, mask_crop_nii
 
-def crop_to_reference_window(img_nii, mask_nii, reference_img_crop_nii):
-    """
-    Crop a full registered image/mask to the exact spatial window of the fixed reference crop.
-    If the reference window extends outside the full image, pad with zeros.
-
-    Parameters
-    ----------
-    img_nii : nib.Nifti1Image
-        Full registered image in the full fixed space.
-    mask_nii : nib.Nifti1Image
-        Full registered mask in the full fixed space.
-    reference_img_crop_nii : nib.Nifti1Image
-        Cropped fixed reference image defining the output window.
-
-    Returns
-    -------
-    img_crop_nii
-    mask_crop_nii
-    """
-    image = img_nii.get_fdata().astype(np.float32)
-    mask = mask_nii.get_fdata().astype(np.uint8)
-
-    X, Y, Z = image.shape
-
-    ref_affine = reference_img_crop_nii.affine
-    ref_shape = reference_img_crop_nii.shape
-    crop_x, crop_y, crop_z = ref_shape
-
-    full_affine = img_nii.affine
-
-    # Recover the crop start indices of the reference window in the full fixed space
-    x0 = int(round((ref_affine[0, 3] - full_affine[0, 3]) / full_affine[0, 0]))
-    y0 = int(round((ref_affine[1, 3] - full_affine[1, 3]) / full_affine[1, 1]))
-    z0 = int(round((ref_affine[2, 3] - full_affine[2, 3]) / full_affine[2, 2]))
-
-    x1 = x0 + crop_x
-    y1 = y0 + crop_y
-    z1 = z0 + crop_z
-
-    # Clip to valid image bounds
-    x0_img = max(0, x0)
-    x1_img = min(X, x1)
-    y0_img = max(0, y0)
-    y1_img = min(Y, y1)
-    z0_img = max(0, z0)
-    z1_img = min(Z, z1)
-
-    # Corresponding bounds in output crop
-    x0_out = x0_img - x0
-    x1_out = x0_out + (x1_img - x0_img)
-    y0_out = y0_img - y0
-    y1_out = y0_out + (y1_img - y0_img)
-    z0_out = z0_img - z0
-    z1_out = z0_out + (z1_img - z0_img)
-
-    # Allocate fixed-size outputs
-    img_crop = np.zeros((crop_x, crop_y, crop_z), dtype=image.dtype)
-    mask_crop = np.zeros((crop_x, crop_y, crop_z), dtype=mask.dtype)
-
-    # Copy valid overlap
-    img_crop[x0_out:x1_out, y0_out:y1_out, z0_out:z1_out] = image[x0_img:x1_img, y0_img:y1_img, z0_img:z1_img]
-    mask_crop[x0_out:x1_out, y0_out:y1_out, z0_out:z1_out] = mask[x0_img:x1_img, y0_img:y1_img, z0_img:z1_img]
-
-    img_crop_nii = nib.Nifti1Image(img_crop, ref_affine)
-    mask_crop_nii = nib.Nifti1Image(mask_crop, ref_affine)
-
-    return img_crop_nii, mask_crop_nii
 
 def crop_all_frames(crop_shape=(128,128,32), limit=1000):
     """
@@ -339,32 +272,36 @@ def _sitk_to_nib(img_sitk, reference_nib, dtype=np.float32):
     return nii
 
 
-def rigid_register_one_patient(fixed_img_full_nii, fixed_mask_full_nii, 
-                                                                    fixed_mask_crop_nii, moving_mask_crop_nii,
-                                                                    moving_img_full_nii, moving_mask_full_nii,
-                                                                    number_of_iterations=200
-                                                                    ):
+def rigid_register_one_patient(fixed_img_nii, fixed_mask_nii, 
+                                                                      moving_img_nii, moving_mask_nii, 
+                                                                    #   original_img_nii, original_mask_nii, 
+                                                                      number_of_iterations=200):
     """
-    Estimate rigid transform on cropped binary masks,
-    then apply it to full resampled image and full multi-label mask,
-    resampling onto the full fixed grid.
+    Rigidly register one moving patient to one fixed reference.
+
+    Registration is driven by binary masks.
+    The resulting rigid transform is then applied to:
+      - moving image  (linear interpolation)
+      - moving mask   (nearest-neighbor interpolation)
+
+    Returns
+    -------
+    registered_img_nii : nib.Nifti1Image
+    registered_mask_nii : nib.Nifti1Image
+    final_transform : sitk.Transform
     """
 
-    # --- SITK conversion ---
-    fixed_img_full_sitk = rsf._make_sitk_from_nib(fixed_img_full_nii)
-    fixed_mask_full_sitk = rsf._make_sitk_from_nib(fixed_mask_full_nii)
+    # Convert all necessary images from nii to sitk
+    fixed_img_sitk = rsf._make_sitk_from_nib(fixed_img_nii)
+    moving_img_sitk = rsf._make_sitk_from_nib(moving_img_nii)
+     # Convert original masks (multi-label)
+    fixed_mask_sitk = rsf._make_sitk_from_nib(fixed_mask_nii)
+    moving_mask_sitk = rsf._make_sitk_from_nib(moving_mask_nii)
+    # Create binary masks for registration
+    fixed_mask_bin_sitk = sitk.Cast(fixed_mask_sitk > 0, sitk.sitkFloat32)
+    moving_mask_bin_sitk = sitk.Cast(moving_mask_sitk > 0, sitk.sitkFloat32)
 
-    fixed_mask_crop_sitk = rsf._make_sitk_from_nib(fixed_mask_crop_nii)
-    moving_mask_crop_sitk = rsf._make_sitk_from_nib(moving_mask_crop_nii)
-
-    moving_img_full_sitk = rsf._make_sitk_from_nib(moving_img_full_nii)
-    moving_mask_full_sitk = rsf._make_sitk_from_nib(moving_mask_full_nii)
-
-    # --- binary masks for registration ---
-    fixed_mask_bin_sitk = sitk.Cast(fixed_mask_crop_sitk > 0, sitk.sitkFloat32)
-    moving_mask_bin_sitk = sitk.Cast(moving_mask_crop_sitk > 0, sitk.sitkFloat32)
-
-    # --- initialize rigid transform ---
+        # Initialize rigid transform
     initial_transform = sitk.CenteredTransformInitializer(
         fixed_mask_bin_sitk,
         moving_mask_bin_sitk,
@@ -372,7 +309,7 @@ def rigid_register_one_patient(fixed_img_full_nii, fixed_mask_full_nii,
         sitk.CenteredTransformInitializerFilter.GEOMETRY,
     )
 
-    # --- registration setup ---
+    # Registration setup
     registration_method = sitk.ImageRegistrationMethod()
     registration_method.SetMetricAsMeanSquares()
     registration_method.SetOptimizerAsRegularStepGradientDescent(
@@ -389,45 +326,23 @@ def rigid_register_one_patient(fixed_img_full_nii, fixed_mask_full_nii,
     registration_method.SmoothingSigmasAreSpecifiedInPhysicalUnitsOn()
     registration_method.SetInitialTransform(initial_transform, inPlace=False)
 
-    # --- estimate transform on cropped binary masks ---
-    final_transform = registration_method.Execute(
-        fixed_mask_bin_sitk,
-        moving_mask_bin_sitk
-    )
+    # Run registration
+    final_transform = registration_method.Execute(fixed_mask_bin_sitk, moving_mask_bin_sitk)
 
-    # --- apply transform to full image, resample onto fixed full grid ---
-    registered_img_sitk = sitk.Resample(
-        moving_img_full_sitk,
-        fixed_img_full_sitk,
-        final_transform,
-        sitk.sitkLinear,
-        0.0,
-        moving_img_full_sitk.GetPixelID()
-    )
+    # Apply transform to image
+    registered_img_sitk = sitk.Resample(moving_img_sitk, fixed_img_sitk, 
+                                                                                  final_transform, sitk.sitkLinear, 0.0, moving_img_sitk.GetPixelID())
 
-    # --- apply transform to full multi-label mask, resample onto fixed full grid ---
-    registered_mask_sitk = sitk.Resample(
-        moving_mask_full_sitk,
-        fixed_mask_full_sitk,
-        final_transform,
-        sitk.sitkNearestNeighbor,
-        0,
-        sitk.sitkUInt8
-    )
+    # Apply transform to original multi-label mask with nearest neighbor
+    registered_mask_sitk = sitk.Resample(moving_mask_sitk, fixed_mask_sitk,
+                                                                                     final_transform, sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)
 
-    # --- back to nibabel ---
-    registered_img_nii = _sitk_to_nib(
-        registered_img_sitk,
-        fixed_img_full_nii,
-        dtype=np.float32
-    )
-    registered_mask_nii = _sitk_to_nib(
-        registered_mask_sitk,
-        fixed_mask_full_nii,
-        dtype=np.uint8
-    )
+    # Convert back to nibabel
+    registered_img_nii = _sitk_to_nib(registered_img_sitk, fixed_img_nii, dtype=np.float32)
+    registered_mask_nii = _sitk_to_nib(registered_mask_sitk, fixed_mask_nii, dtype=np.uint8)
 
     return registered_img_nii, registered_mask_nii, final_transform
+
 
 def print_rigid_transform_info(transform):
     """
@@ -457,108 +372,60 @@ def print_rigid_transform_info(transform):
         print(f"Translation Y: {ty:.3f}")
         print(f"Translation Z: {tz:.3f}")
 
-def register_all_frames(reference_patient="patient001", crop_after_registration=True, crop_size_after_registration=(128, 128, 32), limit=1000):
+def register_all_frames(reference_patient="patient001", limit=1000):
     """
-    Register all patients to a fixed reference.
-
-    Transform is estimated on cropped masks, applied on full resampled image/mask.
-    Optionally crop afterwards to the exact spatial window of the fixed reference crop.
+    Register all cropped frames to a fixed reference patient and save results.
+    The frame number is taken dynamically from filenames (frame01, frame04, etc.).
     """
-
-    # Load all cropped image paths
+    # Load all paths from cropped frames (128x128x32 default)
     all_img_crop = sorted(idf.load_allcroppedframes())
-
-    # Output folder
-    out_folder = Path(path_tempodata_folder) / "registered_framesBIS"
+    # Out folder 
+    out_folder = Path(path_tempodata_folder) / "registered_frames"
     out_folder.mkdir(parents=True, exist_ok=True)
 
-    # --- find reference cropped image dynamically ---
-    ref_img_crop_path = None
+    # --- find reference patient and guess his name and frame number
+    ref_img_path = None
     for p in all_img_crop:
-        if Path(p).name.startswith(reference_patient + "_"):
-            ref_img_crop_path = p
+        if reference_patient in Path(p).name:
+            ref_img_path = p
             break
-    if ref_img_crop_path is None:
+    if ref_img_path is None:
         raise ValueError(f"Reference patient {reference_patient} not found.")
+    ref_path = Path(ref_img_path)
+    ref_patient_id, ref_frame_id = ref_path.stem.split("_")[:2]
+    # Load ref patient
+    fixed_img_nii = nib.load(ref_img_path)
+    ref_mask_path = ref_img_path.replace("_cropped.nii.gz", "_cropped_gt.nii.gz")
+    fixed_mask_nii = nib.load(ref_mask_path)
 
-    ref_crop_path = Path(ref_img_crop_path)
-    ref_patient_id, ref_frame_id = ref_crop_path.stem.split("_")[:2]
-
-    # Load fixed cropped image/mask
-    fixed_img_crop_nii = nib.load(ref_img_crop_path)
-    fixed_mask_crop_path = ref_img_crop_path.replace("_cropped.nii.gz", "_cropped_gt.nii.gz")
-    fixed_mask_crop_nii = nib.load(fixed_mask_crop_path)
-
-    # Load fixed full resampled image/mask
-    fixed_img_full_path = (
-        path_tempodata_folder + "resampled_frames/" + ref_patient_id + "_" + ref_frame_id + "_resampled.nii.gz"
-    )
-    fixed_mask_full_path = (
-        path_tempodata_folder + "resampled_frames/" + ref_patient_id + "_" + ref_frame_id + "_resampled_gt.nii.gz"
-    )
-    fixed_img_full_nii = nib.load(fixed_img_full_path)
-    fixed_mask_full_nii = nib.load(fixed_mask_full_path)
-
-    # Optional safety check
-    if tuple(crop_size_after_registration) != fixed_img_crop_nii.shape:
-        print("Warning: crop_size_after_registration differs from reference cropped image shape.")
-        print("Requested:", crop_size_after_registration)
-        print("Reference:", fixed_img_crop_nii.shape)
-
-    n_files = min(len(all_img_crop), limit)
-
-    for i in range(n_files):
-        img_crop_path = all_img_crop[i]
-        path = Path(img_crop_path)
+    # Registration
+    for i in range(min(len(all_img_crop), limit)):
+        # Guess patient name and frame number
+        img_path = all_img_crop[i]
+        path = Path(img_path)
         patient_id, frame_id = path.stem.split("_")[:2]
-
+        # Make paths to save from this 2 infos
         img_out = out_folder / f"{patient_id}_{frame_id}_registered.nii.gz"
         mask_out = out_folder / f"{patient_id}_{frame_id}_registered_gt.nii.gz"
-
         # Skip reference patient
         if patient_id == ref_patient_id and frame_id == ref_frame_id:
-            if crop_after_registration:
-                nib.save(fixed_img_crop_nii, img_out)
-                nib.save(fixed_mask_crop_nii, mask_out)
-            else:
-                nib.save(fixed_img_full_nii, img_out)
-                nib.save(fixed_mask_full_nii, mask_out)
-            print(f"[{i+1}/{n_files}] Saved reference {img_out.name}")
+            nib.save(fixed_img_nii, img_out)
+            nib.save(fixed_mask_nii, mask_out)
+            # print(f"[{i+1}/{len(all_img_crop)}] Saved reference {img_out.name}")
             continue
-
-        # Moving cropped mask for transform estimation
-        moving_mask_crop_path = str(path).replace("_cropped.nii.gz", "_cropped_gt.nii.gz")
-        moving_mask_crop_nii = nib.load(moving_mask_crop_path)
-
-        # Moving full resampled image/mask for transform application
-        moving_img_full_path = (
-            path_tempodata_folder + "resampled_frames/" + patient_id + "_" + frame_id + "_resampled.nii.gz"
+        # Do registration and save
+        mask_path = str(path).replace("_cropped.nii.gz", "_cropped_gt.nii.gz")
+        moving_img_nii = nib.load(img_path)
+        moving_mask_nii = nib.load(mask_path)
+        reg_img_nii, reg_mask_nii, final_transform = rigid_register_one_patient(
+            fixed_img_nii,
+            fixed_mask_nii,
+            moving_img_nii,
+            moving_mask_nii
         )
-        moving_mask_full_path = (
-            path_tempodata_folder + "resampled_frames/" + patient_id + "_" + frame_id + "_resampled_gt.nii.gz"
-        )
-
-        moving_img_full_nii = nib.load(moving_img_full_path)
-        moving_mask_full_nii = nib.load(moving_mask_full_path)
-
-        # Registration in full fixed space
-        reg_img_full_nii, reg_mask_full_nii, final_transform = rigid_register_one_patient(
-            fixed_img_full_nii, fixed_mask_full_nii, fixed_mask_crop_nii,
-            moving_mask_crop_nii,
-            moving_img_full_nii, moving_mask_full_nii
-        )
-
-        # Optional crop after registration
-        if crop_after_registration:
-            reg_img_nii, reg_mask_nii = crop_to_reference_window(
-                reg_img_full_nii, reg_mask_full_nii, fixed_img_crop_nii
-            )
-        else:
-            reg_img_nii, reg_mask_nii = reg_img_full_nii, reg_mask_full_nii
-
         nib.save(reg_img_nii, img_out)
         nib.save(reg_mask_nii, mask_out)
-        print(f"[{i+1}/{n_files}] Saved {img_out.name}")
+        print(f"[{i+1}/{min(len(all_img_crop), limit)}] Saved {img_out.name}")
 
 def dice_score(mask1, mask2):
     """
@@ -633,7 +500,6 @@ def dice_all_patients(reference_patient="patient001", cropped_folder="cropped_fr
         frame_id = reg_frame_id
         cropped_mask = nib.load(cropped_mask_path).get_fdata()
         reg_mask = nib.load(reg_mask_path).get_fdata()
-        # print(cropped_mask.shape, reg_mask.shape)
         # Dice before/after against reference
         dice_before = dice_score(ref_mask, cropped_mask)
         dice_after = dice_score(ref_mask, reg_mask)
