@@ -17,6 +17,7 @@ from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error,
 )
+from sklearn.model_selection import train_test_split
 import joblib
 import os
 import re
@@ -24,52 +25,121 @@ import glob
 import matplotlib.pyplot as plt
 import ast
 import seaborn as sns
+import hashlib
 
 from paths import * 
 import pca_eachpatient_functions as pef 
 import importdata_functions as idf
 
 
-def load_xy(source_folder, savepca_folder, pca_description, maskYN, maskbinYN, imageROIonlyYN, whichtoreturn, group_binYN, group_binvalue, ntraining = 100, recalculate= False):
+def splitname_to_seed(splitname, modulo=2**32):
+    digest = hashlib.sha256(splitname.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % modulo
+
+def get_or_create_split_indices(n_samples, y, splitname, test_size=50, save_folder=None):
+    """
+    Load a previously saved split if it exists, otherwise create it from the
+    split name, save it, and return train/test indices.
+    """
+    if save_folder is None:
+        save_folder = path_tempodata_folder
+
+    os.makedirs(save_folder, exist_ok=True)
+
+    split_path = os.path.join(save_folder, f"{splitname}_splitindices.joblib")
+
+    if os.path.exists(split_path):
+        split_data = joblib.load(split_path)
+
+        train_idx = np.asarray(split_data["train_idx"], dtype=int)
+        test_idx = np.asarray(split_data["test_idx"], dtype=int)
+
+        # Optional safety checks
+        if len(train_idx) + len(test_idx) != n_samples:
+            raise ValueError(
+                f"Saved split '{splitname}' is incompatible with current dataset size: "
+                f"{len(train_idx)} + {len(test_idx)} != {n_samples}"
+            )
+
+        return train_idx, test_idx
+
+    seed = splitname_to_seed(splitname)
+
+    all_idx = np.arange(n_samples)
+    train_idx, test_idx = train_test_split(
+        all_idx,
+        test_size=test_size,
+        stratify=y,
+        random_state=seed,
+        shuffle=True,
+    )
+
+    split_data = {
+        "splitname": splitname,
+        "seed": seed,
+        "n_samples": int(n_samples),
+        "train_idx": np.asarray(train_idx, dtype=int),
+        "test_idx": np.asarray(test_idx, dtype=int),
+    }
+
+    joblib.dump(split_data, split_path, compress=3)
+
+    return np.asarray(train_idx, dtype=int), np.asarray(test_idx, dtype=int)
+
+def load_xy(source_folder, X_folder, savepca_folder, pca_description, maskYN, maskbinYN, imageROIonlyYN, whichtoreturn, group_binYN, group_binvalue, ntraining = 100, recalculateXbase= False, defaultsplit = True, splitname = None):
     """
     """
     # Load X (patient images or mask) 
-    X = pef.get_vectorsarray(source_folder, savepca_folder, details_str = pca_description, mask=maskYN, binary_mask=maskbinYN, image_roi_only=imageROIonlyYN, recalculate= recalculate)
-    X_train, X_test = X[:ntraining], X[ntraining:]
+    X = pef.get_vectorsarray(source_folder, X_folder, details_str = pca_description, mask=maskYN, binary_mask=maskbinYN, image_roi_only=imageROIonlyYN, recalculate= recalculateXbase)
     # Load Y (patient data)
     all_files = idf.import_patientmetapaths(printinfos=False)
     Y  = pef.patient_metalists(all_files, returnonlyone=True, whichtoreturn=whichtoreturn)
     if group_binYN:
         Y = [int(val == group_binvalue) for val in Y]
-    Y_train, Y_test = np.asarray(Y[:ntraining]), np.asarray(Y[ntraining:])
-    return X_train, X_test, Y_train, Y_test 
+    Y = np.asarray(Y)
+    # Split
+    if defaultsplit:
+        X_train, X_test = X[:ntraining], X[ntraining:]
+        Y_train, Y_test = np.asarray(Y[:ntraining]), np.asarray(Y[ntraining:])
+    else:
+        if splitname is None:
+            raise ValueError("splitname must be provided when defaultsplit=False")
+        split_folder = os.path.join(path_tempodata_folder, savepca_folder)
+        train_idx, test_idx = get_or_create_split_indices(n_samples=len(X), y=Y, splitname=splitname, test_size=50, save_folder=split_folder)
+        X_train, X_test = X[train_idx], X[test_idx]
+        Y_train, Y_test = Y[train_idx], Y[test_idx]
+        # seed = splitname_to_seed(splitname)
+        # X_train, X_test, Y_train, Y_test  = train_test_split(X, Y, test_size = 50, stratify=Y, random_state = seed)
+        # Ytrain, Y_test = np.asarray(Y_train, Y_test)
+    return X_train, X_test, Y_train, Y_test
 
 def n_pc_for_variance(pca, threshold):
     cumulative = np.cumsum(pca.explained_variance_ratio_)
     idx = np.where(cumulative >= threshold)[0]
     return int(len(cumulative)) if len(idx) == 0 else int(idx[0] + 1)
 
-def logisticreg(X_train_pca, Y_train, pca_folder, pca_description, Y_name, group_binvalue, n_pc_tokeep, multi_class, recalculate=True):
+def logisticreg(X_train_pca, Y_train, pca_folder, pca_description, Y_name, group_binvalue, n_pc_tokeep, multi_class, recalculateLOGI=True, save = False):
     """
     """
     if multi_class:
         mtc_savestring = "_mtc"
         groupname = ""
-        max_iter = 50000
+        max_iter = 30000
     else:
         mtc_savestring = ""
         groupname = group_binvalue
         max_iter = 10000
 
-    if recalculate: # Recalculate and save
+    if recalculateLOGI: # Recalculate and save
         clf = LogisticRegression(max_iter=max_iter, random_state=42, solver="newton-cg")
         clf.fit(X_train_pca, Y_train)
-        joblib.dump(clf, path_tempodata_folder + pca_folder + pca_description + "_"+ Y_name + groupname + "_"  + repr(n_pc_tokeep) + "pc" + mtc_savestring + "_clf.joblib", compress=3)
+        if save:
+            joblib.dump(clf, path_tempodata_folder + pca_folder + "/" + pca_description + "_"+ Y_name + groupname + "_"  + repr(n_pc_tokeep) + "pc" + mtc_savestring + "_clf.joblib", compress=3)
     else: # or load
-        clf = joblib.load(path_tempodata_folder + pca_folder + pca_description + "_"+ Y_name + groupname + "_"  + repr(n_pc_tokeep)  + "pc" + mtc_savestring + "_clf.joblib")
+        clf = joblib.load(path_tempodata_folder + pca_folder + "/" + pca_description + "_"+ Y_name + groupname + "_"  + repr(n_pc_tokeep)  + "pc" + mtc_savestring + "_clf.joblib")
     return clf
 
-def logistic_predictions_results(pca, clf, X_test_pca, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, group_binYN, group_binvalue):
+def logistic_predictions_results(pca, clf, X_test_pca, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, group_binYN, group_binvalue, addstring=""):
     """
     """
     # Predictions
@@ -96,7 +166,7 @@ def logistic_predictions_results(pca, clf, X_test_pca, Y_test, pca_description, 
             "confusion_matrix": cm,
                         }
     # Save results to file
-    with open(path_tempodata_folder + pca_folder + pca_description + "_"+ Y_name + group_binvalue + "_"  + repr(n_pc_tokeep) + "pc_predictionresults.txt", "w") as f:
+    with open(path_tempodata_folder + pca_folder + "/" + pca_description + "_"+ Y_name + group_binvalue + "_"  + repr(n_pc_tokeep) + "pc_predictionresults" + addstring + ".txt", "w") as f:
         f.write("\n========================================\n")
         f.write(f"PCA description: {pca_description}\n")
         f.write(f"Target variable: {Y_name}\n")
@@ -112,7 +182,7 @@ def logistic_predictions_results(pca, clf, X_test_pca, Y_test, pca_description, 
         f.write(f"{cm}\n")
     return results
 
-def logistic_predictions_results_mtc(pca, clf, X_test_pca, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name,):
+def logistic_predictions_results_mtc(pca, clf, X_test_pca, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, splitname =""):
     """
     """
     # Predictions
@@ -146,7 +216,7 @@ def logistic_predictions_results_mtc(pca, clf, X_test_pca, Y_test, pca_descripti
     }
 
     # Save results to file
-    with open(path_tempodata_folder + pca_folder + pca_description + "_" + Y_name + "_" + repr(n_pc_tokeep) + "pc_mtc_predictionresults.txt", "w") as f:
+    with open(path_tempodata_folder + pca_folder + "/" + pca_description + "_" + splitname + "_" + Y_name + "_" + repr(n_pc_tokeep) + "pc_mtc_predictionresults.txt", "w") as f:
         f.write("\n========================================\n")
         f.write(f"PCA description: {pca_description}\n")
         f.write(f"Target variable: {Y_name}\n")
@@ -200,7 +270,7 @@ def parse_prediction_result_file(filepath):
 
     return results
 
-def plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue):
+def plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue, addstring = ""):
     """
     Parameters
     ----------
@@ -211,7 +281,7 @@ def plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue):
     outname : str
         Output png filename.
     """
-    results_folder = os.path.join(path_tempodata_folder, pca_folder)
+    results_folder = os.path.join(path_tempodata_folder, pca_folder + "/")
     pattern = os.path.join(results_folder, f"{pca_description}_{Y_name}{group_binvalue}_*pc_predictionresults.txt")
     files = glob.glob(pattern)
 
@@ -270,7 +340,7 @@ def plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue):
     plt.tight_layout()
 
     # outpath = os.path.join(results_folder, outname)
-    outpath = path_resultsfolder + pca_description + "_"+ Y_name + group_binvalue + "_" + "predictionresults.png"
+    outpath = path_resultsfolder + pca_description + "_"+ Y_name + group_binvalue + "_" + "predictionresults" + addstring + " .png"
     plt.savefig(outpath, dpi=200)
     plt.close()
 
@@ -283,7 +353,7 @@ def parse_prediction_result_file_mtc(filepath):
     results = {}
 
     filename = os.path.basename(filepath)
-    match = re.search(r'_(\d+)pc_mtc_predictionresults\.txt$', filename)
+    match = re.search(r'_(\d+)pc_mtc_predictionresults(?:_.*)?\.txt$', filename)
     if match is None:
         raise ValueError(f"Could not extract number of PCs from filename: {filename}")
     results["n_pc"] = int(match.group(1))
@@ -346,12 +416,12 @@ def parse_prediction_result_file_mtc(filepath):
 
     return results
 
-def plot_prediction_results_mtc(pca_folder, pca_description, Y_name):
+def plot_prediction_results_mtc(pca_folder, pca_description, Y_name, splitname = ""):
     """
     Plot multiclass logistic regression results from saved txt files.
     """
-    results_folder = os.path.join(path_tempodata_folder, pca_folder)
-    pattern = os.path.join(results_folder, f"{pca_description}_{Y_name}_*pc_mtc_predictionresults.txt")
+    results_folder = os.path.join(path_tempodata_folder, pca_folder + "/")
+    pattern = os.path.join(results_folder, f"{pca_description}_{splitname}_{Y_name}_*pc_mtc_predictionresults.txt")
     files = glob.glob(pattern)
 
     if len(files) == 0:
@@ -437,24 +507,24 @@ def plot_prediction_results_mtc(pca_folder, pca_description, Y_name):
 
     outpath = os.path.join(
         path_resultsfolder,
-        f"{pca_description}_{Y_name}_mtc_predictionresults.png"
+        f"{pca_description}_{splitname}_{Y_name}_mtc_predictionresults.png"
     )
     plt.savefig(outpath, dpi=200)
     plt.close()
 
     print(f"Saved plot to: {outpath}")
 
-def plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_pc):
+def plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_pc, splitname=""):
     """
     Plot the normalized confusion matrix for a chosen number of PCs
     from the saved multiclass prediction results.
     """
 
-    results_folder = os.path.join(path_tempodata_folder, pca_folder)
+    results_folder = os.path.join(path_tempodata_folder, pca_folder + "/")
 
     filepath = os.path.join(
         results_folder,
-        f"{pca_description}_{Y_name}_{n_pc}pc_mtc_predictionresults.txt"
+        f"{pca_description}_{splitname}_{Y_name}_{n_pc}pc_mtc_predictionresults.txt"
     )
 
     if not os.path.exists(filepath):
@@ -509,7 +579,7 @@ def plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_pc):
 
     outpath = (
         path_resultsfolder
-        + f"{pca_description}_{Y_name}_{n_pc}pc_confusionmatrix.png"
+        + f"{pca_description}_{splitname}_{Y_name}_{n_pc}pc_confusionmatrix.png"
     )
 
     plt.savefig(outpath, dpi=200)
@@ -517,18 +587,19 @@ def plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_pc):
 
     print(f"Saved confusion matrix to: {outpath}")
 
-def linearreg(X_train_pca, Y_train, pca_folder, pca_description, Y_name, n_pc_tokeep, recalculate=True):
+def linearreg(X_train_pca, Y_train, pca_folder, pca_description, Y_name, n_pc_tokeep, recalculateLIN=True, save = False):
     """
     Train or load a linear regression model.
     """
     filename = (
-        path_tempodata_folder + pca_folder + pca_description + "_"
+        path_tempodata_folder + pca_folder + "/" + pca_description + "_"
         + Y_name + "_" + repr(n_pc_tokeep) + "pc_reg.joblib"
     )
-    if recalculate:
+    if recalculateLIN:
         reg = LinearRegression()
         reg.fit(X_train_pca, Y_train)
-        joblib.dump(reg, filename, compress=3)
+        if save:
+            joblib.dump(reg, filename, compress=3)
     else:
         reg = joblib.load(filename)
 
@@ -559,7 +630,7 @@ def linear_predictions_results(pca, reg, X_test_pca, Y_test, pca_description, pc
     }
 
     with open(
-        path_tempodata_folder + pca_folder + pca_description + "_" + Y_name + "_" + repr(n_pc_tokeep) + "pc_regressionresults.txt",
+        path_tempodata_folder + pca_folder + "/" + pca_description + "_" + Y_name + "_" + repr(n_pc_tokeep) + "pc_regressionresults.txt",
         "w"
     ) as f:
         f.write("\n========================================\n")
@@ -609,7 +680,7 @@ def plot_regression_results(pca_folder, pca_description, Y_name):
     - R2 vs number of PCs
     - RMSE and MAE vs number of PCs
     """
-    results_folder = os.path.join(path_tempodata_folder, pca_folder)
+    results_folder = os.path.join(path_tempodata_folder, pca_folder + "/")
     pattern = os.path.join(results_folder, f"{pca_description}_{Y_name}_*pc_regressionresults.txt")
     files = glob.glob(pattern)
 

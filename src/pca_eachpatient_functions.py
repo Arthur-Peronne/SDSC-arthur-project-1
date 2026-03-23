@@ -15,7 +15,7 @@ import visualizeMRI_functions as vmf
 import importdata_functions as idf 
 import pca_functions as pf 
 
-def _load_and_flatten_nii(path, binary_mask=False, image_roi_only=False, roi_mask_path=None):
+def _load_and_flatten_nii(path, binary_mask=False, image_roi_only=False, roi_mask_path=None, flatten = True):
     """
     Load one NIfTI file and flatten it into a 1D vector.
 
@@ -57,9 +57,12 @@ def _load_and_flatten_nii(path, binary_mask=False, image_roi_only=False, roi_mas
         else:
             data = data.astype(np.float32)
 
-    return data.ravel()
+    if flatten:
+        return data.ravel()
+    else:
+        return data
 
-def get_vectorsarray(source_folder, pca_folder, recalculate = False, mask=False, binary_mask=False, image_roi_only=False, details_str = "", n_jobs=-1):
+def get_vectorsarray(source_folder, pca_folder, recalculate = False, mask=False, binary_mask=False, image_roi_only=False, details_str = "", flatten = True, n_jobs=-1):
     """
     """
 
@@ -71,8 +74,12 @@ def get_vectorsarray(source_folder, pca_folder, recalculate = False, mask=False,
         save_suffix += "_bin"
     if image_roi_only:
         save_suffix += "_imgROIonly"
-
-    out_path = (path_tempodata_folder + pca_folder + details_str + "_nparraydata_vectors" + save_suffix + ".npy")
+    if not flatten:
+        save_suffix += "_4d"
+    else:
+        save_suffix += "_flat3d"
+    
+    out_path = (path_tempodata_folder + pca_folder + "/" + details_str + "_nparraydata_vectors" + save_suffix + ".npy")
     if source_folder == "registered_frames" or source_folder == "registered_framesBIS":
         suffix = "registered"
     else:
@@ -100,11 +107,11 @@ def get_vectorsarray(source_folder, pca_folder, recalculate = False, mask=False,
                 p.replace(f"_{suffix}.nii.gz", f"_{suffix}_gt.nii.gz")
                 for p in nii_paths
             ]
-            data_list = Parallel(n_jobs=n_jobs)(delayed(_load_and_flatten_nii)(img_path, binary_mask=False, image_roi_only=True, roi_mask_path=mask_path)
+            data_list = Parallel(n_jobs=n_jobs)(delayed(_load_and_flatten_nii)(img_path, binary_mask=False, image_roi_only=True, roi_mask_path=mask_path, flatten=flatten)
                 for img_path, mask_path in zip(nii_paths, roi_mask_paths)
             )
         else:
-            data_list = Parallel(n_jobs=n_jobs)(delayed(_load_and_flatten_nii)(path, binary_mask=binary_mask, image_roi_only=False, roi_mask_path=None)
+            data_list = Parallel(n_jobs=n_jobs)(delayed(_load_and_flatten_nii)(path, binary_mask=binary_mask, image_roi_only=False, roi_mask_path=None, flatten=flatten)
                 for path in nii_paths
             )
         # data_list = Parallel(n_jobs=n_jobs)(delayed(_load_and_flatten_nii)(path, binary_mask=binary_mask) for path in nii_paths)
@@ -116,29 +123,29 @@ def get_vectorsarray(source_folder, pca_folder, recalculate = False, mask=False,
 
     return data_array
 
-def pca_patients(X, pca_folder, pca_description,  normalize_rows=True, recalculate = False, max_pc_calc = 1000):
+def pca_patients(X, pca_folder, pca_description,  normalize_rows=True, recalculatePCA = False, max_pc_calc = 1000, addstring = ""):
     """
     """
-    if recalculate:
+    if recalculatePCA:
         if normalize_rows:
             X -= X.mean(axis=1, keepdims=True)
         pca = PCA(n_components=min(X.shape[0], max_pc_calc))  # Get all principal components (all t, since it limits in this case) or less if asked
         X_pca = pca.fit_transform(X)
-        joblib.dump(pca, path_tempodata_folder + pca_folder +  pca_description + "_pca.joblib", compress=3)
-        np.save(path_tempodata_folder + pca_folder +  pca_description + "_X_pca.npy", X_pca)
+        joblib.dump(pca, path_tempodata_folder + pca_folder + "/"+ pca_description + "_pca" + addstring + ".joblib", compress=3)
+        np.save(path_tempodata_folder + pca_folder +  "/" + pca_description + "_X_pca" + addstring + ".npy", X_pca)
         meta = {
             "n_patients": X.shape[0],
             "n_features": X.shape[1],
             "n_components": pca.n_components_,
             "explained_variance_ratio_": pca.explained_variance_ratio_,
         }
-        joblib.dump(meta, path_tempodata_folder + pca_folder + pca_description + "_meta.joblib", compress=3)
+        joblib.dump(meta, path_tempodata_folder + pca_folder + "/" + pca_description + "_meta" + addstring + ".joblib", compress=3)
 
     else:
         # Load results 
-        pca =joblib.load(path_tempodata_folder + pca_folder +  pca_description + "_pca.joblib")
-        X_pca = np.load(path_tempodata_folder + pca_folder +  pca_description + "_X_pca.npy")
-        meta = joblib.load(path_tempodata_folder + pca_folder + pca_description + "_meta.joblib")
+        pca =joblib.load(path_tempodata_folder + pca_folder + "/" + pca_description + "_pca" + addstring + ".joblib")
+        X_pca = np.load(path_tempodata_folder + pca_folder +  "/" + pca_description + "_X_pca" + addstring + ".npy")
+        meta = joblib.load(path_tempodata_folder + pca_folder + "/" + pca_description + "_meta" + addstring + ".joblib")
 
     return pca, X_pca, meta
 
