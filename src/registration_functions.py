@@ -575,7 +575,7 @@ def dice_score(mask1, mask2):
 
     return 2.0 * intersection / volume_sum
 
-def dice_all_patients(reference_patient="patient001", cropped_folder="cropped_frames", registered_folder="registered_frames"):
+def dice_all_patients(reference_patient="patient001", cropped_folder="cropped_frames", registered_folder="registered_framesBIS"):
     """
     Compute Dice before/after registration for all patients.
 

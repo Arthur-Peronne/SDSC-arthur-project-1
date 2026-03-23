@@ -3,15 +3,12 @@
 Functions to import data
 """
 
-import nibabel as nib # to import the files
+import nibabel as nib
 import glob
+import os 
 
 from paths import *
 
-# Parameters : 
-datatype_tochoose_1 = "testing/" # or "training/"
-patient_name_1 = "patient102"
-file_name_1 = "4d"
 
 def extract_nii_file(datatype_tochoose, patient_name, file_name, print_infos=False):
     """
@@ -113,8 +110,10 @@ def load_allgt_res(onlytraining=False):
 
 def import_patientmetapaths(printinfos=True):
     # Load
-    training_files = glob.glob(path_datadir + "training/patient*/Info.cfg")
-    testing_files = glob.glob(path_datadir + "testing/patient*/Info.cfg")
+    # training_files = glob.glob(path_datadir + "training/patient*/Info.cfg")
+    # testing_files = glob.glob(path_datadir + "testing/patient*/Info.cfg")
+    training_files = sorted(glob.glob(path_datadir + "training/patient*/Info.cfg"))
+    testing_files = sorted(glob.glob(path_datadir + "testing/patient*/Info.cfg"))
     all_files = training_files + testing_files # and optional: all_files.sort() 
     if printinfos:
         print("First file:", all_files[0])
@@ -127,3 +126,107 @@ def load_allcroppedframes():
     """   
     all_img_crop = glob.glob(path_tempodata_folder + "cropped_frames/patient*_frame*_cropped.nii.gz")
     return sorted(all_img_crop)
+
+import os
+
+def get_patient_acdc_path(patient_id,  file_type="frame",  base_path="/home/renku/work/s3-bucket/ACDC", check_exists=False):
+    """
+    Return the path to one ACDC file for a given patient.
+
+    Parameters
+    ----------
+    patient_id : int
+        Patient number, from 1 to 150.
+    file_type : str
+        Type of file to retrieve:
+        - "frame"    : initial frame NIfTI
+        - "mask"     : GT mask of the initial frame
+        - "4d"       : 4D NIfTI with all epochs
+        Default: "frame"
+    base_path : str
+        Root folder of the ACDC dataset.
+    check_exists : bool
+        If True, raise FileNotFoundError when the path does not exist.
+
+    Returns
+    -------
+    str
+        Full path to the requested file.
+    """
+
+    if not (1 <= patient_id <= 150):
+        raise ValueError("patient_id must be between 1 and 150")
+
+    if file_type not in {"frame", "mask", "4d"}:
+        raise ValueError("file_type must be one of: 'frame', 'mask', '4d'")
+
+    subset = "training" if patient_id <= 100 else "testing"
+    patient_str = f"patient{patient_id:03d}"
+
+    # Special case: patient 90 uses frame04 instead of frame01
+    frame_num = 4 if patient_id == 90 else 1
+    frame_str = f"frame{frame_num:02d}"
+
+    if file_type == "frame":
+        filename = f"{patient_str}_{frame_str}.nii.gz"
+    elif file_type == "mask":
+        filename = f"{patient_str}_{frame_str}_gt.nii.gz"
+    else:  # file_type == "4d"
+        filename = f"{patient_str}_4d.nii.gz"
+
+    full_path = os.path.join(base_path, subset, patient_str, filename)
+
+    if check_exists and not os.path.exists(full_path):
+        raise FileNotFoundError(f"File not found: {full_path}")
+
+    return full_path
+
+def get_patient_modified_path(patient_id, folder, file_type="frame", base_path="/home/renku/work/SDSC-arthur-project-1/tempodata",check_exists=False):
+    """
+    Return the path to a modified (e.g. registered) NIfTI file for a given patient.
+
+    Parameters
+    ----------
+    patient_id : int
+        Patient number (1 to 150)
+    folder : str
+        Subfolder inside tempodata (e.g. "registered_framesBIS")
+    file_type : str
+        Type of file:
+        - "frame" : modified image (default)
+        - "mask"  : modified GT mask
+    base_path : str
+        Root path to tempodata
+    check_exists : bool
+        If True, raise error if file does not exist
+
+    Returns
+    -------
+    str
+        Full path to the requested file
+    """
+
+    if not (1 <= patient_id <= 150):
+        raise ValueError("patient_id must be between 1 and 150")
+
+    if file_type not in {"frame", "mask"}:
+        raise ValueError("file_type must be 'frame' or 'mask'")
+
+    patient_str = f"patient{patient_id:03d}"
+
+    # Special case: patient 90 uses frame04
+    frame_num = 4 if patient_id == 90 else 1
+    frame_str = f"frame{frame_num:02d}"
+
+    # Build filename
+    if file_type == "frame":
+        filename = f"{patient_str}_{frame_str}_registered.nii.gz"
+    else:  # mask
+        filename = f"{patient_str}_{frame_str}_registered_gt.nii.gz"
+
+    full_path = os.path.join(base_path, folder, filename)
+
+    if check_exists and not os.path.exists(full_path):
+        raise FileNotFoundError(f"File not found: {full_path}")
+
+    return full_path
