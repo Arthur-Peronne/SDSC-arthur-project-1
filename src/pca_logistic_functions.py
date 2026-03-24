@@ -778,3 +778,106 @@ def plot_regression_predicted_vs_true(reg, X_test_pca, Y_test, pca_description, 
     plt.close()
 
     print(f"Saved predicted-vs-true plot to: {outpath}")
+
+def plot_average_confusion_matrix_mtc_simple(filepaths, outpath, title="Average confusion matrix"):
+    """
+    Load several multiclass result txt files, average their row-normalized
+    confusion matrices, and plot the result.
+
+    Parameters
+    ----------
+    filepaths : list of str
+        List of txt result files containing a confusion matrix.
+    outpath : str
+        Path to save the output figure.
+    title : str
+        Plot title.
+    """
+    cms = []
+    classes_ref = None
+
+    for filepath in filepaths:
+        with open(filepath, "r") as f:
+            text = f.read()
+
+        # Extract classes
+        match = re.search(r"Classes:\s*\[(.*?)\]", text)
+        if match is None:
+            raise ValueError(f"Could not find class list in file: {filepath}")
+        classes = [c.strip().strip("'").strip('"') for c in match.group(1).split(",")]
+
+        # Extract confusion matrix
+        match = re.search(r"Confusion matrix:\n([\s\S]*?\]\])", text)
+        if match is None:
+            raise ValueError(f"Could not find confusion matrix in file: {filepath}")
+
+        cm_str = match.group(1)
+
+        rows = []
+        for line in cm_str.strip().split("\n"):
+            line = line.replace("[", "").replace("]", "").strip()
+            if line:
+                rows.append([int(x) for x in line.split()])
+
+        cm = np.array(rows, dtype=float)
+
+        # Normalize rows
+        cm = cm / cm.sum(axis=1, keepdims=True)
+
+        if classes_ref is None:
+            classes_ref = classes
+        elif classes != classes_ref:
+            raise ValueError(
+                f"Class order mismatch in file {filepath}\n"
+                f"Expected: {classes_ref}\n"
+                f"Found: {classes}"
+            )
+
+        cms.append(cm)
+
+    # Average matrices
+    cm_avg = np.mean(cms, axis=0)
+
+    # Plot
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(
+        cm_avg,
+        annot=True,
+        fmt=".2f",
+        cmap="Blues",
+        xticklabels=classes_ref,
+        yticklabels=classes_ref,
+        vmin=0,
+        vmax=1
+    )
+
+    plt.xlabel("Predicted class")
+    plt.ylabel("True class")
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=200)
+    plt.close()
+
+    print(f"Saved average confusion matrix to: {outpath}")
+
+def get_mtc_result_files(results_folder):
+    """
+    Return all multiclass prediction result files in a folder.
+
+    Parameters
+    ----------
+    results_folder : str
+        Folder containing the txt result files.
+
+    Returns
+    -------
+    list of str
+        Sorted list of filepaths.
+    """
+    pattern = os.path.join(results_folder, "*mtc_predictionresults*.txt")
+    files = glob.glob(pattern)
+
+    if len(files) == 0:
+        raise FileNotFoundError(f"No mtc_predictionresults files found in: {results_folder}")
+
+    return sorted(files)

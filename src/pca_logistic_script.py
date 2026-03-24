@@ -48,31 +48,36 @@ splitname = "split5"
 # reg = plf.linearreg(X_train_pca_n, Y_train, pca_folder, pca_description, Y_name, n_pc_tokeep, recalculateLIN=True)
 # results = plf.linear_predictions_results(pca, reg, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name)
 
-# Do all pipeline with different cumvar thresholds
-X_train, X_test, Y_train, Y_test  = plf.load_xy(source_folder, "X_vectors", pca_folder, pca_description, maskYN, maskbinYN, imageROIonlyYN, Y_name, group_binYN, group_binvalue, recalculateXbase= False, defaultsplit = False, splitname = splitname)
-pca, X_train_pca, meta = pef.pca_patients(X_train, pca_folder, pca_description, normalize_rows=not maskbinYN, recalculatePCA = True, addstring= "_" + splitname)
-if not maskbinYN:
-    X_test = X_test - X_test.mean(axis=1, keepdims=True)
-X_test_pca = pca.transform(X_test)
-for cumvar_threshold in cumvar_threshold_list:
-    n_pc_tokeep = plf.n_pc_for_variance(pca, cumvar_threshold)
-    X_train_pca_n = np.asarray(X_train_pca[:, :n_pc_tokeep], dtype=np.float64, order="C") # Convert into float64, helps the logistic regression solver
-    X_test_pca_n  = np.asarray(X_test_pca[:, :n_pc_tokeep], dtype=np.float64, order="C")
-    # Logistic regression
-    clf = plf.logisticreg(X_train_pca_n, Y_train, pca_folder, pca_description, Y_name, group_binvalue, n_pc_tokeep, multi_class = not group_binYN, recalculateLOGI=True)
-    if group_binYN: # binary regression
-        results = plf.logistic_predictions_results(pca, clf, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, group_binYN, group_binvalue)
-    else: # multiclass regression 
-        results = plf.logistic_predictions_results_mtc(pca, clf, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, splitname= splitname)
-    # Linear regression
-    reg = plf.linearreg(X_train_pca_n, Y_train, pca_folder, pca_description, Y_name, n_pc_tokeep, recalculateLIN=True)
-    results = plf.linear_predictions_results(pca, reg, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name)
+# # Do all pipeline with different cumvar thresholds
+# X_train, X_test, Y_train, Y_test  = plf.load_xy(source_folder, "X_vectors", pca_folder, pca_description, maskYN, maskbinYN, imageROIonlyYN, Y_name, group_binYN, group_binvalue, recalculateXbase= False, defaultsplit = False, splitname = splitname)
+# pca, X_train_pca, meta = pef.pca_patients(X_train, pca_folder, pca_description, normalize_rows=not maskbinYN, recalculatePCA = True, addstring= "_" + splitname)
+# if not maskbinYN:
+#     X_test = X_test - X_test.mean(axis=1, keepdims=True)
+# X_test_pca = pca.transform(X_test)
+# for cumvar_threshold in cumvar_threshold_list:
+#     n_pc_tokeep = plf.n_pc_for_variance(pca, cumvar_threshold)
+#     X_train_pca_n = np.asarray(X_train_pca[:, :n_pc_tokeep], dtype=np.float64, order="C") # Convert into float64, helps the logistic regression solver
+#     X_test_pca_n  = np.asarray(X_test_pca[:, :n_pc_tokeep], dtype=np.float64, order="C")
+#     # Logistic regression
+#     clf = plf.logisticreg(X_train_pca_n, Y_train, pca_folder, pca_description, Y_name, group_binvalue, n_pc_tokeep, multi_class = not group_binYN, recalculateLOGI=True)
+#     if group_binYN: # binary regression
+#         results = plf.logistic_predictions_results(pca, clf, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, group_binYN, group_binvalue)
+#     else: # multiclass regression 
+#         results = plf.logistic_predictions_results_mtc(pca, clf, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name, splitname= splitname)
+#     # Linear regression
+#     reg = plf.linearreg(X_train_pca_n, Y_train, pca_folder, pca_description, Y_name, n_pc_tokeep, recalculateLIN=True)
+#     results = plf.linear_predictions_results(pca, reg, X_test_pca_n, Y_test, pca_description, pca_folder, n_pc_tokeep, Y_name)
 
-# Plot all results
-if group_binYN: # binary regression
-    plf.plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue)
-else:
-    plf.plot_prediction_results_mtc(pca_folder, pca_description, Y_name, splitname= splitname)
-    plf.plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_idealpc_confusion, splitname= splitname)
+# # Plot all results
+# if group_binYN: # binary regression
+#     plf.plot_prediction_results(pca_folder, pca_description,Y_name, group_binvalue)
+# else:
+#     plf.plot_prediction_results_mtc(pca_folder, pca_description, Y_name, splitname= splitname)
+#     plf.plot_confusion_matrix_mtc(pca_folder, pca_description, Y_name, n_idealpc_confusion, splitname= splitname)
 # plf.plot_regression_results(pca_folder, pca_description, Y_name)
 # plf.plot_regression_predicted_vs_true(reg, X_test_pca_n, Y_test, pca_description, Y_name, n_idealpc_regression) # WARNING: change n_pc_tokeep = n_idealpc_regression to get the right X_test_pca_n !!!
+
+# Average confusion matrix
+filepaths = plf.get_mtc_result_files(path_tempodata_folder + pca_folder)
+print(filepaths)  # optional check
+plf.plot_average_confusion_matrix_mtc_simple(filepaths=filepaths, outpath=path_resultsfolder + "REGvoxROI_group_avg_confusionmatrix.png")
