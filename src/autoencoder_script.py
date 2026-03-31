@@ -3,38 +3,122 @@
 Script for the entoencoder model to compare patients hearts
 """
 
+import torch 
+
 from paths import *
 import autoencoder_functions as aef 
 
 # User choices : DATA
-n_training = 120
+n_development = 120
+validation = True
+n_validation = 24 if validation else 0
 splitname = "split0"
 # User choices : MODEL
-latent_dimensions = 119
-latdim_list = [1,2,3,4,5,7,10,15,20,30,40,50,80,119]
-n_epochs = 50 
+model_name = "AE3dConv" # "AE3dCurrent", or "AE3dFCDeep" , "AE3dConv"
+latent_dimensions = 4
+latdim_list = [4, 20, 80] # latdim_list = [1,2,3,4,5,7,10,15,20,30,40,50,80,119] or latdim_list = [4, 8, 12, 16, 20, 32, 40, 60, 80, 120] for AE3dConv 
+n_epochs = 100 
+checkpoint_epochs = [20, 50]
+# User choices: METRICS 
+metrics_dataset = "validation" # "test,  "validation", or "train"
 
-# # Get data
-# train_dataset, test_dataset, X_maxnorm = aef.ae_getdataset(n_training, imagesource = "registered_framesBIS") # Get data
+# Get data
+n_train_effective = n_development - n_validation if validation else n_development
+# train_dataset, validation_dataset, test_dataset, X_maxnorm = aef.ae_getdataset(
+#     n_patients=n_development,
+#     validation=validation,
+#     n_validation=n_validation,
+#     imagesource="registered_framesBIS"
+# )
 
-# # for latent_dimensions in latdim_list:
-# # Model training/loading 
-# model = aef.ae_training(train_dataset, latent_dimensions, splitname = splitname, n_epochs = n_epochs, recalculateAE=False) # Model calc/load
+# for model_name in ["AE3dCurrent" , "AE3dFCDeep", "AE3dConv"]: # AE3dFCDeep
 
-# # Get efficienty metrics for every test patient and agregate
-# all_metrics = []
-# for (i,patient_tensor) in enumerate(test_dataset):
-#     x_patient, x_recon_denorm = aef.ae_reconstructX(patient_tensor, X_maxnorm, model)
-#     metrics = aef.reconstruction_metrics(x_patient, x_recon_denorm, n_training, splitname, latent_dimensions, n_epochs, n_training+1+i, savemetrics=False)
-#     all_metrics.append(metrics)
-# aef.ae_aggregate_metrics(all_metrics, n_training, splitname, latent_dimensions, n_epochs)
+#     for latent_dimensions in latdim_list:
 
-# Plot a few patients
-# ADD A FUNCTION TO SAVE AND LOAD ALL_METRICS (LATER)
+#         # Simulation name 
+#         simulation_name = f"{model_name}_{n_train_effective}patients_{splitname}_{latent_dimensions}dims"
+
+#         for n_epochs in sorted(set((checkpoint_epochs or []) + [n_epochs])):
+#             # Model training/loading 
+#             model = aef.ae_training(
+#                 train_dataset,
+#                 simulation_name=simulation_name,
+#                 model_name=model_name,
+#                 latent_dimensions=latent_dimensions,
+#                 n_epochs=n_epochs,
+#                 batch_size=1,
+#                 recalculateAE=False,
+#                 checkpoint_epochs=checkpoint_epochs
+#             )
+
+#             for metrics_dataset in ["validation", "train"]:
+#                 #   Get efficienty metrics for every test patient and agregate
+#                 dataset_for_eval, patient_offset = aef.dataset_for_metrics(
+#                     metrics_dataset,
+#                     train_dataset,
+#                     validation_dataset,
+#                     test_dataset,
+#                     n_train=n_train_effective,
+#                     n_validation=n_validation
+#                 )
+#                 all_metrics = []
+#                 for (i,patient_tensor) in enumerate(dataset_for_eval):
+#                     x_patient, x_recon_denorm = aef.ae_reconstructX(patient_tensor, X_maxnorm, model)
+#                     metrics = aef.reconstruction_metrics(
+#                         x_true=x_patient,
+#                         x_pred=x_recon_denorm,
+#                         patient_number=patient_offset + 1 + i,
+#                         simulation_name=simulation_name,
+#                         n_epochs = n_epochs,
+#                         metrics_dataset=metrics_dataset,
+#                         savemetrics=False
+#                     )
+#                     all_metrics.append(metrics)
+#                 aef.ae_aggregate_metrics(all_metrics, simulation_name=simulation_name, n_epochs = n_epochs, metrics_dataset=metrics_dataset)
+#                 # aef.plot_ae_loss_from_txt(path_tempodata_folder + "autoencoder/AE3d_120patients_split0_latent119_200epochs_loss.txt", save_path = path_resultsfolder+"AE3d_120patients_split0_latent119_lossepochplot.png")
+
+# #  Plot a few patients
+# #  ADD A FUNCTION TO SAVE AND LOAD ALL_METRICS (LATER)
 # selected_patients = aef.ae_select_representative_patients(all_metrics)
 # patient_numbers = [v['patient_number'] for v in selected_patients.values()] # patient_numbers = [134, 136, 144]
-# aef.ae_plotcompare_selected(patient_numbers, n_training, test_dataset, X_maxnorm, model, splitname, latent_dimensions, n_epochs)
+# aef.ae_plotcompare_selected(patient_numbers, n_training, train_dataset, test_dataset, X_maxnorm, model, splitname, latent_dimensions, n_epochs, metrics_dataset=metrics_dataset)
 
-# Plot AE VS PCA results 
-aef.plot_summarymetrics_vs_latentdim(path_tempodata_folder + "autoencoder", splitname="split0", n_patients=n_training, ae_epochs=50)
-# aef.plot_ae_loss_from_txt(path_tempodata_folder + "autoencoder/AE3d_120patients_split0_latent119_200epochs_loss.txt", save_path = path_resultsfolder+"AE3d_120patients_split0_latent119_lossepochplot.png")
+# #  Plot AE VS PCA results 
+# aef.plot_summarymetrics_vs_latentdim(path_tempodata_folder + "autoencoder", splitname=splitname, n_patients = n_training, device_tag = None, batch_size=None, metrics_dataset=metrics_dataset, band_mode=None)
+# aef.plot_r2_test_vs_train(
+#     path_tempodata_folder + "autoencoder",
+#     splitname=splitname,
+#     n_patients=n_training,
+#     device_tag=None,
+#     batch_size=None,
+#     annotate_dims=True
+# )
+
+#  # Compare AE models 
+# epoch_list = sorted(set((checkpoint_epochs or []) + [n_epochs]))
+# figs_by_arch = aef.plot_ae_metrics_vs_latentdim_by_architecture( # 1) One figure per architecture, 3 curves = epochs
+#     results_folder=path_tempodata_folder + "autoencoder",
+#     splitname=splitname,
+#     n_patients=n_train_effective,
+#     metrics_dataset=metrics_dataset,
+#     model_names=["AE3dCurrent", "AE3dFCDeep", "AE3dConv"],
+#     epoch_list=epoch_list,
+#     xscale="log"
+# )
+# figs_by_epoch = aef.plot_ae_metrics_vs_latentdim_by_epoch( # 2) One figure per epoch, 3 curves = architectures
+#     results_folder=path_tempodata_folder + "autoencoder",
+#     splitname=splitname,
+#     n_patients=n_train_effective,
+#     metrics_dataset=metrics_dataset,
+#     model_names=["AE3dCurrent", "AE3dFCDeep", "AE3dConv"],
+#     epoch_list=epoch_list,
+#     xscale="log"
+# )
+# fig_scatter, ax_scatter, paired_records = aef.plot_ae_r2_validation_vs_train_scatter( # 3) Scatter train R2 vs validation R2
+#     results_folder=path_tempodata_folder + "autoencoder",
+#     splitname=splitname,
+#     n_patients=n_train_effective,
+#     model_names=["AE3dCurrent", "AE3dFCDeep", "AE3dConv"],
+#     epoch_list=epoch_list,
+#     annotate_dims=True
+# )
