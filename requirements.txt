@@ -33,3 +33,4 @@ threadpoolctl
 torch
 typing_extensions
 urllib3
+-e .
