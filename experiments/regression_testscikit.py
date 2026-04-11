@@ -12,8 +12,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from paths import *
-
+from src.config import RESULTS_FOLDER
 
 # Define a pipeline to search for the best combination of PCA truncation
 # and classifier regularization.
@@ -73,4 +72,4 @@ ax1.set_xlabel("n_components")
 plt.xlim(-1, 70)
 
 plt.tight_layout()
-plt.savefig(path_resultsfolder + "testregression.png")
+plt.savefig(RESULTS_FOLDER / "testregression.png")

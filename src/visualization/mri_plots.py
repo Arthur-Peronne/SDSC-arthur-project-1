@@ -1,4 +1,4 @@
-# src/visualizeMIR_functions.py
+# src/visualization/mri_plots.py
 """
 Functions to visualize MRI images
 """
@@ -13,8 +13,7 @@ from nibabel.affines import apply_affine
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 
-from paths import *
-import importdata_functions as idf
+from src.config import RESULTS_FOLDER
 
 # Get single epoch 
 def get_oneepoch(nii_obj,epoch_toplot):
@@ -35,13 +34,13 @@ def plot_oneepoch(nii_obj_1t, patient_str, oldstyle=True, print_infos=False, epo
                 vmin=cl[0],
                 vmax=cl[1],
                 title= patient_str + " " + epoch_str + " " + details_str,
-                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+                output_file=RESULTS_FOLDER / f"{patient_str}{epoch_str}{details_str}.png"
             )
         else:
             plot_stat_map(
                 nii_obj_1t,
                 title= patient_str + " " + epoch_str + " " + details_str,
-                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+                output_file=RESULTS_FOLDER / f"{patient_str}{epoch_str}{details_str}.png"
             )
     else : 
         if cl_yesno:
@@ -51,14 +50,14 @@ def plot_oneepoch(nii_obj_1t, patient_str, oldstyle=True, print_infos=False, epo
                 vmin=cl[0],
                 vmax=cl[1],
                 title= patient_str + " " + epoch_str + " " + details_str,
-                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+                output_file=RESULTS_FOLDER / f"{patient_str}{epoch_str}{details_str}.png"
             )
         else:
             plot_stat_map(
                 nii_obj_1t,
                 cmap = "plasma",
                 title= patient_str + " " + epoch_str + " " + details_str,
-                output_file=path_resultsfolder + patient_str + epoch_str + details_str + ".png"
+                output_file=RESULTS_FOLDER / f"{patient_str}{epoch_str}{details_str}.png"
             )
     if print_infos:
         print("Saved epoch "+ repr(epoch_number))
@@ -75,7 +74,7 @@ def plot_allepochs(nii_obj, patient_name,  print_infos=True, epoch_limit=1000, s
         plot_stat_map(
             vol,
             title=patient_name + f" – epoch {t}",
-            output_file=path_resultsfolder + patient_name + "_epoch_" +repr(t)+ suffix + ".png"
+            output_file=RESULTS_FOLDER / f"{patient_name}_epoch_{t}{suffix}.png"
         )
         if print_infos:
             print(f"Saved epoch {t}")
@@ -114,9 +113,9 @@ def plot_masks(path_img, path_mask, patient_name, file_name_img, plot_ref=True, 
     """
     # Extract nii object and reference
     nii_obj_img, nii_obj_mask = nib.load(path_img), nib.load(path_mask) 
-    # nii_obj_img = idf.extract_nii_file(datatype_tochoose, patient_name, file_name_img)
+    # nii_obj_img = ipd.extract_nii_file(datatype_tochoose, patient_name, file_name_img)
     # file_name_mask = file_name_img + "_gt" # "4d" or "frame01_gt" or "frame_1" or "frameXX_gt" or "frame_XX"
-    # nii_obj_mask = idf.extract_nii_file(datatype_tochoose, patient_name, file_name_mask, print_infos=True)
+    # nii_obj_mask = ipd.extract_nii_file(datatype_tochoose, patient_name, file_name_mask, print_infos=True)
 
     # Plot img for reference 
     # Scale
@@ -131,12 +130,12 @@ def plot_masks(path_img, path_mask, patient_name, file_name_img, plot_ref=True, 
             vmin=vmin, vmax=vmax,
         )
         if plot_ref:
-            display.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_raw" + ".png")
+            display.savefig(RESULTS_FOLDER / f"{patient_name}_{file_name_img}_raw.png")
     # Plot img + mask 
         if plot_refandmask:
             mask_r = resample_to_img(nii_obj_mask, nii_obj_img, interpolation="nearest")
             display.add_overlay(mask_r, transparency=0.5)
-            display.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_superposition" + ".png")
+            display.savefig(RESULTS_FOLDER / f"{patient_name}_{file_name_img}_superposition.png")
         display.close()
     # Plot only elements in mask 
     if plot_onlymasked:
@@ -149,7 +148,7 @@ def plot_masks(path_img, path_mask, patient_name, file_name_img, plot_ref=True, 
             filtered_img,
             title= file_name_img + " region of interest (heart) only",
             vmin=vmin, vmax=vmax)
-        display_masked.savefig(path_resultsfolder + patient_name + "_" + file_name_img + "_onlymasked" +".png")
+        display_masked.savefig(RESULTS_FOLDER / f"{patient_name}_{file_name_img}_onlymasked.png")
         display_masked.close()
 
 
@@ -177,7 +176,7 @@ def plot_oneimg(nii_img_1t, cmapYN = False, cmap = "", patient_str ="", file_str
             vmin=vmin, vmax=vmax,
             title= patient_str + " " + file_str + " " + details_str)    
     # Save 
-    output_file = path_resultsfolder + patient_str + "_" + file_str + "_" + details_str + ".png"
+    output_file = RESULTS_FOLDER / f"{patient_str}_{file_str}_{details_str}.png"
     display.savefig(output_file)
 
 def plot_onemask(nii_img_1t, patient_str ="", file_str = "", details_str=""):
@@ -200,7 +199,7 @@ def plot_onemask(nii_img_1t, patient_str ="", file_str = "", details_str=""):
         black_bg=True,
         title= patient_str + " MASK " + details_str)
     # Save 
-    output_file = path_resultsfolder + patient_str + "_" + file_str + "_" + details_str + ".png"
+    output_file = RESULTS_FOLDER / f"{patient_str}_{file_str}_{details_str}.png"
     display.savefig(output_file)
 
 
@@ -219,7 +218,7 @@ def plot_oneimagemask(nii_obj_img, nii_obj_mask, patient_str ="", file_str = "",
     #Superpose Add mask
     mask_r = resample_to_img(nii_obj_mask, nii_obj_img, interpolation="nearest")
     display.add_overlay(mask_r, transparency=0.5)
-    output_file = path_resultsfolder + patient_str + "_" + file_str + "_" + details_str + "_superposition.png"
+    output_file = RESULTS_FOLDER / f"{patient_str}_{file_str}_{details_str}_superposition.png"
     display.savefig(output_file)
     display.close()
     # Plot only elements in mask 
@@ -233,6 +232,6 @@ def plot_oneimagemask(nii_obj_img, nii_obj_mask, patient_str ="", file_str = "",
         black_bg=True,
         vmin=vmin, vmax=vmax,
         title= patient_str + " " + file_str + " " + details_str +  " region of interest (heart) only")
-    output_file = path_resultsfolder + patient_str + "_" + file_str + "_" + details_str + "_onlyheart.png"
+    output_file = RESULTS_FOLDER / f"{patient_str}_{file_str}_{details_str}_onlyheart.png"
     display.savefig(output_file)
     display.close()

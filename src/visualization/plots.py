@@ -1,4 +1,4 @@
-# src/various_plots.py
+# src/vizualization/plot.py
 """
 Various plots, not direct MRI representations
 """
@@ -6,7 +6,7 @@ Various plots, not direct MRI representations
 
 import matplotlib.pyplot as plt
 
-from paths import *
+from src.config import RESULTS_FOLDER
 
 def plot_centroid_distributions(list3D, datatype="Centroid"):
 
@@ -23,4 +23,4 @@ def plot_centroid_distributions(list3D, datatype="Centroid"):
 
     plt.tight_layout()
     # plt.show()
-    plt.savefig(path_resultsfolder + datatype + "_masks"+".png")
+    plt.savefig(RESULTS_FOLDER / f"{datatype}_masks.png")

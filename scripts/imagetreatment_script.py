@@ -1,4 +1,4 @@
-# src/image_treatment.py
+# scripts/image_treatment.py
 """
 Script to treat MRI images before analysis (PCA)
 """
@@ -10,10 +10,9 @@ import numpy as np
 import glob
 from pathlib import Path
 
-
-from paths import *
-import visualizeMRI_functions as vmf
-import imagetreatment_functions as itf 
+from src.config import DATADIR, TEMPODATA_FOLDER
+from src.visualization import mri_plots as mrp
+from src.data import imagetreatment as imt
 
 # USER ACTION: Choose patient and file (and epoch if single epoch to plot)
 datatype_tochoose_1 = "training/" #  "testing/" or "training/"
@@ -25,45 +24,45 @@ cropandsave_all = False
 
 ### BASIC RESAMPLING (tests)
 
-# reference_path= path_datadir + "training/patient001/patient001_4d.nii.gz" # For reference
-# target_path = path_datadir + datatype_tochoose_1 + patient_name_1 + "/" +  patient_name_1 + "_4d.nii.gz"  # For image
-# reference_img = nib.load(reference_path)
+# reference_path = DATADIR / "training/patient001/patient001_4d.nii.gz"
+# target_path = DATADIR / datatype_tochoose_1 / patient_name_1 / f"{patient_name_1}_4d.nii.gz"
+# # reference_img = nib.load(reference_path)
 # target_img = nib.load(target_path)
-# test = itf.resample_basic(target_img, reference_img, patient_name_1, savefile=True, plotimage=True)
+# test = imt.resample_basic(target_img, reference_img, patient_name_1, savefile=True, plotimage=True)
 # print(test.shape)
 
 # CROPPING FROM HEART MASK (ONE IMAGE)
 
 if plot_onecropt:
-    path_file = path_datadir + datatype_tochoose_1 +  patient_name_1 + "/" + patient_name_1 + "_" + file_name_1
+    path_file = DATADIR / datatype_tochoose_1 / patient_name_1 / f"{patient_name_1}_{file_name_1}"
     path_img = path_file + ".nii.gz"
     path_mask = path_file + "_gt.nii.gz"
     nii_img = nib.load(path_img)
     nii_mask = nib.load(path_mask)
-    nii_cropped = itf.crop_heartzone_oneimage(nii_img, nii_mask)
+    nii_cropped = imt.crop_heartzone_oneimage(nii_img, nii_mask)
     print(nii_cropped.shape)
-    vmf.plot_oneepoch(nii_cropped, patient_name_1,oldstyle=False, epoch_str = "_" + file_name_1 + "_", details_str= "cropped")
+    mrp.plot_oneepoch(nii_cropped, patient_name_1,oldstyle=False, epoch_str = "_" + file_name_1 + "_", details_str= "cropped")
 
 # CROPPING ALL IMAGES AND PLOT THE CROPPED NII FILES 
 
 if cropandsave_all:
-    all_img, all_gt = itf.loaddata_tocrop()
-    itf.crop_heartzone_allpatients()
-    itf.plot_cropped_files()
+    all_img, all_gt = imt.loaddata_tocrop()
+    imt.crop_heartzone_allpatients()
+    imt.plot_cropped_files()
 
 # Checks on crop data 
 
 # patient1, patient2 = "149", "124"
-# path_file = path_tempodata_folder  + "cropped_nii/patient"+patient1+"_frame01.nii_cropped.nii.gz"
-# path_file2 = path_tempodata_folder  + "cropped_nii/patient"+patient2+"_frame01.nii_cropped.nii.gz"
+# path_file = TEMPODATA_FOLDER / "cropped_nii" / f"patient{patient1}_frame01.nii_cropped.nii.gz"
+# path_file2 = TEMPODATA_FOLDER / "cropped_nii" / f"patient{patient2}_frame01.nii_cropped.nii.gz"
 # img1 = nib.load(path_file)
 # img2 = nib.load(path_file2)
 patient1 = "005"
-path_file = path_datadir  + "training/patient" + patient1 + "/patient" + patient1 + "_frame01_gt.nii.gz"
+path_file = DATADIR / "training" / f"patient{patient1}" / f"patient{patient1}_frame01_gt.nii.gz"
 img1= nib.load(path_file)
 # data_3d = img1.get_fdata()
 # print(np.unique(data_3d))
-# path_file2 = path_tempodata_folder  + "cropped_nii/patient" + patient1 + "_frame01.nii_cropped.nii.gz"
+# path_file2 = TEMPODATA_FOLDER / "cropped_nii" / f"patient{patient1}_frame01.nii_cropped.nii.gz"
 # img2= nib.load(path_file2)
 # data_3d2= img2.get_fdata()
 # print(np.unique(data_3d2))
@@ -74,7 +73,7 @@ img1= nib.load(path_file)
 
 # data_3d = img1.get_fdata()
 # print(np.unique(data_3d))
-# bbox, size = itf.bbox_from_masked_nan(img1)
+# bbox, size = imt.bbox_from_masked_nan(img1)
 # print("bbox:", bbox)
 # print("size (Nx,Ny,Nz):", size)
 # bbox, size = bbox_from_masked_nan(img2, filtered="nans")

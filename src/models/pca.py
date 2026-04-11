@@ -1,6 +1,6 @@
-# src/pca_functions.py
+# src/models/pca.py
 """
-Functions to perform PCA, for pca_script.py
+Functions to perform PCA — temporal and spatial utilities.
 """
 
 import numpy as np 
@@ -9,7 +9,7 @@ from sklearn.feature_selection import VarianceThreshold
 from sklearn.preprocessing import StandardScaler
 import nibabel as nib # to get the nii format
 
-from paths import *
+from src.config import RESULTS_FOLDER
 
 # PCA 1: each 3D image as a sample (how voxels co-vary over time, temporal dynamics) -> 30 lines, >100 000 columns (dimensions).
 def pca1_transpose(data_array, print_infos=True):
@@ -22,30 +22,6 @@ def pca1_transpose(data_array, print_infos=True):
         print("Shape of X:", X.shape)  # Should be (30, >100000)
     return X
 
-# def pca1_normalize(X, select=VarianceThreshold(), scale=StandardScaler()):
-#     """
-#     """
-#     selector = select
-#     X_filtered = selector.fit_transform(X)
-#     removed_features_mask = selector.get_support(indices=False)  # Mask of features that were NOT removed
-#     scaler = scale
-#     X_scaled = scaler.fit_transform(X_filtered)
-#     return  X_scaled, scaler, removed_features_mask
-
-# def pca1_reconstruct(X_reduced, X, pca, n, scaler, removed_features_mask):
-#     """
-#     """
-#     # Transformed data (only first n columns, shape (30,n)) times eigen_vectors (only first n rows, shape(n,>100000) -> shape (30, >100000), OK!
-#     X_reconstructed_scaled = X_reduced[:, :n] @ pca.components_[:n, :]
-#     # Reverse normalization
-#     X_reconstructed_filtered = scaler.inverse_transform(X_reconstructed_scaled)
-#     # Re-add constant features removed before PCA
-#     X_reconstructed = np.zeros_like(X)
-#     X_reconstructed[:, removed_features_mask] = X_reconstructed_filtered # features not removed
-#     removed_features_mean = np.mean(X[:, ~removed_features_mask], axis=0) # re-calculation of removed features
-#     X_reconstructed[:, ~removed_features_mask] = np.tile(removed_features_mean, (X.shape[0], 1)) # 
-#     return X_reconstructed
-
 def pca1_reformat(X_reconstructed, data_array, nii_obj, patient_name_1, n_pc_toreconstruct, save=True):
     """
     """
@@ -53,7 +29,7 @@ def pca1_reformat(X_reconstructed, data_array, nii_obj, patient_name_1, n_pc_tor
     X_reconstructed_4d = np.transpose(X_reconstructed_3d, (1, 2, 3, 0)) # put epochs as last dimension
     nii_reconstructed = nib.Nifti1Image(X_reconstructed_4d, nii_obj.affine, nii_obj.header)
     if save:
-        nib.save(nii_reconstructed, path_resultsfolder+ patient_name_1 + "_projected_" + repr(n_pc_toreconstruct) + "_4d.nii.gz")
+        nib.save(nii_reconstructed, RESULTS_FOLDER / f"{patient_name_1}_projected_{n_pc_toreconstruct}_4d.nii.gz")
     return nii_reconstructed
 
 def pca_clean(X):
@@ -93,7 +69,7 @@ def plot_pca_explipower(pca,patient_name):
     ax2.set_ylim(0, 1.05)
     ax2.grid(True)
     #save fig
-    plt.savefig(path_resultsfolder + patient_name + "_PCA_explainedvariance.png")
+    plt.savefig(RESULTS_FOLDER / f"{patient_name}_PCA_explainedvariance.png")
 
 
 def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, scale_str = 'Time (Epoch)', segments = True, axisscale_fixed=True):
@@ -143,7 +119,7 @@ def plot_pcvalues_2d(X_reduced, pc_n1, pc_n2, patient_str, details_str, scale_st
     # ax1.xaxis.set_ticklabels([])
     # ax1.yaxis.set_ticklabels([])
 
-    plt.savefig(path_resultsfolder + patient_str + details_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) + ".png")
+    plt.savefig(RESULTS_FOLDER / f"{patient_str}{details_str}_{pc_n1+1}and{pc_n2+1}.png")
 
 
 # PCA2 : spatial 
@@ -202,7 +178,7 @@ def plot_pcvalues_2d_meta(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_list, 
     # ax1.xaxis.set_ticklabels([])
     # ax1.yaxis.set_ticklabels([])
 
-    plt.savefig(path_resultsfolder + "pc_allpatientsepoch0_" + metainfo_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) +".png")
+    plt.savefig(RESULTS_FOLDER / f"pc_allpatientsepoch0_{metainfo_str}_{pc_n1+1}and{pc_n2+1}.png")
 
 def plot_pcvalues_2d_metacat(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_list, axisscale_fixed=True):
     """
@@ -248,5 +224,5 @@ def plot_pcvalues_2d_metacat(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_lis
     ax1.set_xticks(np.linspace(-max_x, max_x, 7))
     ax1.set_yticks(np.linspace(-max_y, max_y, 7))
 
-    plt.savefig(path_resultsfolder + "pc_allpatientsepoch0_" + metainfo_str + "_" + repr(pc_n1+1) + "and" + repr(pc_n2+1) +".png")
+    plt.savefig(RESULTS_FOLDER / f"pc_allpatientsepoch0_{metainfo_str}_{pc_n1+1}and{pc_n2+1}.png")
 

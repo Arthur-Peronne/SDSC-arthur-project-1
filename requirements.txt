@@ -22,6 +22,7 @@ pandas
 pillow
 pyparsing
 python-dateutil
+python-dotenv
 requests
 scikit-learn
 scipy

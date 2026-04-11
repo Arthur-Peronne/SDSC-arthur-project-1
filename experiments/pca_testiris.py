@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import numpy as np
 
-from paths import *
+from src.config import RESULTS_FOLDER
 
 # Load IRIS raw data
 iris = load_iris(as_frame=True)
@@ -19,7 +19,7 @@ print(iris.keys())
 # Plot the pair plot
 iris.frame["target"] = iris.target_names[iris.target]
 _ = sns.pairplot(iris.frame, hue="target")
-_.savefig(path_resultsfolder+"pairplot.png") 
+_.savefig(RESULTS_FOLDER / "pairplot.png") 
 
 #  Perform PCA
 pca_1 = PCA(n_components=4)
@@ -43,7 +43,7 @@ def plot_explipower():
     plt.xlabel('Principal components')
     plt.xticks(range(4), ['PC1', 'PC2', 'PC3', 'PC4'])
     plt.legend(loc='best')
-    plt.savefig(path_resultsfolder+"explained_variance.png")
+    plt.savefig(RESULTS_FOLDER / "explained_variance.png")
 plot_explipower()
 
 # PCA plot: components 1&2 (top) and components 3&4 (bottom)
@@ -96,7 +96,7 @@ def plot_pca_2d(X):
     )
     ax2.add_artist(legend2)
 
-    plt.savefig(path_resultsfolder+'PC_2dx2.png')
+    plt.savefig(RESULTS_FOLDER / 'PC_2dx2.png')
 
 plot_pca_2d(X_reduced)
 
