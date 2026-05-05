@@ -8,9 +8,10 @@ import glob
 import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 from pathlib import Path
 
-from src.config import RESULTS_FOLDER
+from src.config import RESULTS_FOLDER, TEMPODATA_FOLDER
 from src.data import importdata as ipd
 from src.visualization import mri_plots as mrp
 from src.training.ae_training import ae_reconstructX
@@ -34,14 +35,57 @@ def ae_plotcompare_onepatient(x_recon_denorm, patient_number, folder_originals, 
     mrp.plot_oneimg(ini_nii_roi, cmapYN=False, patient_str="original", file_str="patient" + repr(patient_number), details_str="REGvoxROI")
     mrp.plot_oneimg(reconstructed_nii, cmapYN=False, cmap="", patient_str=splitname + "_" + repr(latent_dimensions) + "dims", file_str="patient" + repr(patient_number), details_str=details_rec)
 
+def _decode_patient_number(patient_number, n_train_images, n_val_images, n_development, use_both_frames):
+    """
+    Convert internal patient_number back to real patient id and frame type.
+    """
+    if not use_both_frames:
+        return patient_number, "ED"
+    
+    # Taille de chaque split en nombre de patients réels
+    n_train_real = n_train_images // 2
+    n_val_real   = n_val_images // 2
+    
+    # Index dans le dataset global (0-based)
+    idx_global = patient_number - 1
+    
+    if idx_global < n_train_images:
+        # Dans le train set
+        split_size = n_train_real
+        split_offset = 0
+    elif idx_global < n_train_images + n_val_images:
+        # Dans le val set
+        split_size = n_val_real
+        split_offset = n_train_real
+        idx_global -= n_train_images
+    else:
+        # Dans le test set
+        split_size = (150 - n_development)
+        split_offset = n_development
+        idx_global -= (n_train_images + n_val_images)
+    
+    if idx_global < split_size:
+        # Frame ED
+        real_patient = split_offset + idx_global + 1
+        frame_type = "ED"
+    else:
+        # Frame ES
+        real_patient = split_offset + (idx_global - split_size) + 1
+        frame_type = "ES"
+    
+    return real_patient, frame_type
 
 def ae_plotcompare_selected(
     patient_numbers,
-    n_patients,
+    use_both_frames, 
+    n_development, 
+    n_train_images,
+    n_val_images,
     train_dataset,
     test_dataset,
     X_maxnorm,
     model,
+    model_name,
     splitname,
     latent_dimensions,
     n_epochs,
@@ -58,36 +102,34 @@ def ae_plotcompare_selected(
 
         if metrics_dataset == "test":
             dataset = test_dataset
-            idx = patient_number - (n_patients + 1)
-
+            idx = patient_number - (n_train_images + n_val_images + 1)
         elif metrics_dataset == "validation":
             dataset = validation_dataset
             if dataset is None:
                 raise ValueError("validation_dataset is None but metrics_dataset='validation'")
-            idx = patient_number - (n_patients + 1)
-
+            idx = patient_number - (n_train_images + 1)
         else:
             dataset = train_dataset
             idx = patient_number - 1
+
+        real_patient, frame_type = _decode_patient_number(
+            patient_number, n_train_images, n_val_images, n_development, use_both_frames
+        )
 
         if idx < 0 or idx >= len(dataset):
             raise IndexError(f"Invalid index computed: {idx} for patient {patient_number}")
 
         patient_tensor = dataset[idx]
-
-        x_patient, x_recon_denorm = ae_reconstructX(
-            patient_tensor, X_maxnorm, model
-        )
+        x_patient, x_recon_denorm = ae_reconstructX(patient_tensor, X_maxnorm, model)
 
         ae_plotcompare_onepatient(
             x_recon_denorm,
-            patient_number,
-            "registered_framesBIS",
+            real_patient,
+            "registered_frames",
             splitname,
             latent_dimensions,
-            details_rec=f"AErec_{n_epochs}epochs_{metrics_dataset}"
+            details_rec=f"{model_name}_{n_epochs}epochs_{metrics_dataset}_{frame_type}"
         )
-
 
 def _parse_summarymetrics_file(filepath):
     """
@@ -245,8 +287,8 @@ def plot_summarymetrics_vs_latentdim(
     if band_mode not in {"std", "minmax", None}:
         raise ValueError("band_mode must be one of: 'std', 'minmax', None")
 
-    filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
-
+    # filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
+    filepaths = sorted(glob.glob(str(Path(results_folder) / "**" / "*_summarymetrics_*.txt"), recursive=True))
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No *_summarymetrics_*.txt files found in: {results_folder}")
 
@@ -411,7 +453,7 @@ def plot_r2_test_vs_train(
     """
     Plot test R2 versus train R2 for PCA and AE models.
     """
-    filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
+    filepaths = sorted(glob.glob(str(Path(results_folder) / "**" / "*_summarymetrics_*.txt"), recursive=True))
 
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No *_summarymetrics_*.txt files found in: {results_folder}")
@@ -574,7 +616,7 @@ def plot_ae_metrics_vs_latentdim_by_architecture(
 
     metric_names = ["MSE", "RMSE", "MAE", "R2"]
 
-    filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
+    filepaths = sorted(glob.glob(str(Path(results_folder) / "**" / "*_summarymetrics_*.txt"), recursive=True))
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No *_summarymetrics_*.txt files found in: {results_folder}")
 
@@ -728,7 +770,7 @@ def plot_ae_metrics_vs_latentdim_by_epoch(
 
     metric_names = ["MSE", "RMSE", "MAE", "R2"]
 
-    filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
+    filepaths = sorted(glob.glob(str(Path(results_folder) / "**" / "*_summarymetrics_*.txt"), recursive=True))
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No *_summarymetrics_*.txt files found in: {results_folder}")
 
@@ -872,7 +914,7 @@ def plot_ae_r2_validation_vs_train_scatter(
     """
     Scatter plot of validation R2 vs train R2 for AE models only.
     """
-    filepaths = sorted(glob.glob(str(Path(results_folder) / "*_summarymetrics_*.txt")))
+    filepaths = sorted(glob.glob(str(Path(results_folder) / "**" / "*_summarymetrics_*.txt"), recursive=True))
     if len(filepaths) == 0:
         raise FileNotFoundError(f"No *_summarymetrics_*.txt files found in: {results_folder}")
 
@@ -1001,3 +1043,482 @@ def plot_ae_r2_validation_vs_train_scatter(
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
 
     return fig, ax, paired_records
+
+def plot_train_val_loss(
+    loss_history,
+    best_epoch,
+    simulation_name,
+    save_path=None,
+    experiment_name="baseline",  
+):
+    """
+    Plot training and validation loss curves from ae_training_early_stopping.
+ 
+    Parameters
+    ----------
+    loss_history : dict
+        {"train": [float, ...], "validation": [float, ...]}
+        As returned by ae_training_early_stopping.
+    best_epoch : int
+        Epoch at which the best validation loss was reached. A vertical line
+        is drawn at this epoch.
+    simulation_name : str
+        Used for the plot title and default save filename.
+    save_path : Path or str or None
+        If None, saves as {RESULTS_FOLDER}/{simulation_name}_train_val_loss.png
+    """
+    train_losses = np.array(loss_history["train"], dtype=float)
+    val_losses = np.array(loss_history["validation"], dtype=float)
+    epochs = np.arange(1, len(train_losses) + 1)
+ 
+    if save_path is None:
+        save_path = RESULTS_FOLDER / f"{simulation_name}_train_val_loss.png"
+ 
+    fig, ax = plt.subplots(figsize=(9, 5))
+ 
+    ax.plot(epochs, train_losses, linewidth=1.5, label="Train loss")
+    ax.plot(epochs, val_losses, linewidth=1.5, label="Validation loss")
+ 
+    ax.axvline(
+        x=best_epoch,
+        color="red",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"Best epoch ({best_epoch})"
+    )
+ 
+    ax.set_yscale("log")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("MSE loss (log scale)")
+    ax.set_title(f"Train / validation loss — {simulation_name}")
+    ax.legend()
+    ax.grid(True, which="both", alpha=0.3)
+ 
+    fig.tight_layout()
+
+    # Save alongside model files
+    model_save_path = (
+        TEMPODATA_FOLDER / "autoencoder" / simulation_name / experiment_name / "train_val_loss.png"
+    )
+    fig.savefig(model_save_path, dpi=200, bbox_inches="tight")
+    print(f"Loss plot saved: {model_save_path}")
+
+    # # Save in results folder with full name
+    # results_save_path = RESULTS_FOLDER / f"{simulation_name}_{experiment_name}_train_val_loss.png"
+    # fig.savefig(results_save_path, dpi=200, bbox_inches="tight")
+    # print(f"Loss plot saved: {results_save_path}")
+
+    plt.close(fig)
+ 
+    # print(f"Loss plot saved: {save_path}")
+
+# New AE VS PCA plots for comparison
+
+def _load_summarymetrics(folder, simulation_name, experiment_name, n_epochs, metrics_dataset):
+    """
+    Load a summarymetrics txt file and return a dict of metric -> mean value.
+ 
+    Expected path (AE):
+        folder / simulation_name / experiment_name / _{n_epochs}epochs_summarymetrics_{metrics_dataset}.txt
+ 
+    Expected path (PCA):
+        folder / simulation_name / {experiment_name}_summarymetrics_{metrics_dataset}.txt
+        (n_epochs is None for PCA)
+ 
+    Returns
+    -------
+    dict : {metric_name: mean_value} or None if file not found
+    """
+    folder = Path(folder)
+ 
+    if n_epochs is not None:
+        path = folder / simulation_name / experiment_name / f"_{n_epochs}epochs_summarymetrics_{metrics_dataset}.txt"
+    else:
+        path = folder / simulation_name / f"{experiment_name}_summarymetrics_{metrics_dataset}.txt"
+ 
+    if not path.exists():
+        return None
+ 
+    metrics = {}
+    current_metric = None
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            if line in {"MSE", "RMSE", "MAE", "R2"}:
+                current_metric = line
+                metrics[current_metric] = {}
+            elif current_metric is not None and ":" in line:
+                key, value = line.split(":", 1)
+                metrics[current_metric][key.strip()] = float(value.strip())
+ 
+    return {m: v["mean"] for m, v in metrics.items()}
+ 
+ 
+def plot_ae_comparison(
+    results_folder,
+    model_names,
+    experiment_name,
+    splitname,
+    n_patients,
+    latdim_list,
+    metric="R2",
+    xscale="log",
+    save_path=None,
+):
+    """
+    Plot 1 — Compare AE architectures against each other.
+ 
+    For each architecture:
+      - solid line  : validation set metric vs latent dim
+      - dashed line : train set metric vs latent dim
+ 
+    Parameters
+    ----------
+    results_folder : Path or str
+        Path to the autoencoder results folder (TEMPODATA_FOLDER / "autoencoder").
+    model_names : list of str
+        e.g. ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+    experiment_name : str
+        e.g. "lr1e-5"
+    splitname : str
+        e.g. "split0"
+    n_patients : int
+        Number of train patients (used to build simulation_name).
+    latdim_list : list of int
+        Latent dimensions to plot.
+    metric : str
+        Metric to plot. Default "R2".
+    xscale : str
+        "log" or "linear".
+    save_path : Path or str or None
+        If None, saves to RESULTS_FOLDER.
+    """
+    results_folder = Path(results_folder)
+ 
+    color_map = {
+        "AE3dCurrent": "orange",
+        "AE3dFCDeep":  "green",
+        "AE3dConv":    "blue",
+        "AE3dLinear":  "purple",
+    }
+ 
+    fig, ax = plt.subplots(figsize=(10, 6))
+ 
+    for model_name in model_names:
+        color = color_map.get(model_name, "gray")
+        val_values, train_values, dims_val, dims_train = [], [], [], []
+ 
+        for latent_dim in latdim_list:
+            simulation_name = f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+ 
+            # Find best_epoch from existing .pth file
+            model_dir = results_folder / simulation_name / experiment_name
+            # pth_files = sorted(model_dir.glob("_best_*epochs.pth")) if model_dir.exists() else []
+            pth_files = sorted(
+                                                    model_dir.glob("_best_*epochs.pth"),
+                                                    key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+                                                ) if model_dir.exists() else []
+            if len(pth_files) == 0:
+                continue
+            best_epoch = int(pth_files[-1].stem.replace("_best_", "").replace("epochs", ""))
+ 
+            val_m = _load_summarymetrics(results_folder, simulation_name, experiment_name, best_epoch, "validation")
+            train_m = _load_summarymetrics(results_folder, simulation_name, experiment_name, best_epoch, "train")
+ 
+            if val_m is not None and metric in val_m:
+                val_values.append(val_m[metric])
+                dims_val.append(latent_dim)
+            if train_m is not None and metric in train_m:
+                train_values.append(train_m[metric])
+                dims_train.append(latent_dim)
+ 
+        if dims_val:
+            ax.plot(dims_val, val_values, color=color, linewidth=2,
+                    marker="o", markersize=5, label=f"{model_name} (val)")
+        if dims_train:
+            ax.plot(dims_train, train_values, color=color, linewidth=1,
+                    linestyle="--", marker="o", markersize=3, label=f"{model_name} (train)")
+ 
+    ax.set_xlabel("Latent dimension")
+    ax.set_ylabel(metric)
+    ax.set_xscale(xscale)
+    ax.set_xticks(dims_val)
+    ax.set_xticklabels([str(d) for d in dims_val])
+    ax.set_title(
+        f"AE comparison | {metric} | val set\n"
+        f"{n_patients} train patients | {splitname} | {experiment_name}"
+    )
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+ 
+    if save_path is None:
+        save_path = RESULTS_FOLDER / f"AEcomparison_{metric}_{splitname}_{n_patients}patients_{experiment_name}.png"
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {save_path}")
+ 
+ 
+def plot_ae_vs_pca(
+    ae_results_folder,
+    pca_results_folder,
+    model_names,
+    experiment_name,
+    pca_name,
+    splitname,
+    n_patients,
+    latdim_list_ae,
+    latdim_list_pca,
+    metric="R2",
+    xscale="log",
+    save_path=None,
+):
+    """
+    Plot 2 — Compare best AE architectures vs PCA. Informative only —
+    do NOT use this plot to select the AE model (use plot_ae_comparison instead).
+ 
+    For each AE architecture and PCA:
+      - solid line  : test set metric vs latent dim
+      - dashed line : train set metric vs latent dim
+ 
+    PCA is plotted in black.
+ 
+    Parameters
+    ----------
+    ae_results_folder : Path or str
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    pca_results_folder : Path or str
+        Path to TEMPODATA_FOLDER / "pca_allpatients_res".
+    model_names : list of str
+        AE architectures to plot.
+    experiment_name : str
+        AE experiment name, e.g. "lr1e-5".
+    pca_name : str
+        PCA simulation name, e.g. "PCA_100patients_split0_ED".
+    splitname : str
+    n_patients : int
+        Number of AE train patients.
+    latdim_list_ae : list of int
+        Latent dims for AE.
+    latdim_list_pca : list of int
+        Latent dims for PCA (can be denser, e.g. range(1, 100)).
+    metric : str
+        Metric to plot. Default "R2".
+    xscale : str
+        "log" or "linear".
+    save_path : Path or str or None
+    """
+    ae_results_folder  = Path(ae_results_folder)
+    pca_results_folder = Path(pca_results_folder)
+ 
+    color_map = {
+        "AE3dCurrent": "orange",
+        "AE3dFCDeep":  "green",
+        "AE3dConv":    "blue",
+        "AE3dLinear":  "purple",
+        "PCA":         "black",
+    }
+ 
+    fig, ax = plt.subplots(figsize=(10, 6))
+ 
+    # ── AE curves ─────────────────────────────────────────────────────────────
+    for model_name in model_names:
+        color = color_map.get(model_name, "gray")
+        test_values, train_values, dims_test, dims_train = [], [], [], []
+ 
+        for latent_dim in latdim_list_ae:
+            simulation_name = f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+ 
+            model_dir = ae_results_folder / simulation_name / experiment_name
+            # pth_files = sorted(model_dir.glob("_best_*epochs.pth")) if model_dir.exists() else []
+            pth_files = sorted(
+                                                    model_dir.glob("_best_*epochs.pth"),
+                                                    key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+                                                ) if model_dir.exists() else []
+            if len(pth_files) == 0:
+                continue
+            best_epoch = int(pth_files[-1].stem.replace("_best_", "").replace("epochs", ""))
+ 
+            test_m  = _load_summarymetrics(ae_results_folder, simulation_name, experiment_name, best_epoch, "test")
+            train_m = _load_summarymetrics(ae_results_folder, simulation_name, experiment_name, best_epoch, "train")
+ 
+            if test_m is not None and metric in test_m:
+                test_values.append(test_m[metric])
+                dims_test.append(latent_dim)
+            if train_m is not None and metric in train_m:
+                train_values.append(train_m[metric])
+                dims_train.append(latent_dim)
+ 
+        if dims_test:
+            ax.plot(dims_test, test_values, color=color, linewidth=2,
+                    marker="o", markersize=5, label=f"{model_name} (test)")
+        if dims_train:
+            ax.plot(dims_train, train_values, color=color, linewidth=1,
+                    linestyle="--", marker="o", markersize=3, label=f"{model_name} (train)")
+ 
+    # ── PCA curve ─────────────────────────────────────────────────────────────
+    pca_test_values, pca_train_values, pca_dims_test, pca_dims_train = [], [], [], []
+ 
+    for latent_dim in latdim_list_pca:
+        experiment_dim = f"{latent_dim}dims"
+ 
+        test_m  = _load_summarymetrics(pca_results_folder, pca_name, experiment_dim, None, "test")
+        train_m = _load_summarymetrics(pca_results_folder, pca_name, experiment_dim, None, "train")
+ 
+        if test_m is not None and metric in test_m:
+            pca_test_values.append(test_m[metric])
+            pca_dims_test.append(latent_dim)
+        if train_m is not None and metric in train_m:
+            pca_train_values.append(train_m[metric])
+            pca_dims_train.append(latent_dim)
+ 
+    if pca_dims_test:
+        ax.plot(pca_dims_test, pca_test_values, color="black", linewidth=2,
+                label="PCA (test)")
+    if pca_dims_train:
+        ax.plot(pca_dims_train, pca_train_values, color="black", linewidth=1,
+                linestyle="--", label="PCA (train)")
+ 
+    ax.set_xlabel("Latent dimension")
+    ax.set_ylabel(metric)
+    ax.set_xscale(xscale)
+    ax.set_xticks([1]+latdim_list_ae)
+    ax.set_xticklabels([str(d) for d in [1]+latdim_list_ae])
+    ax.set_title(
+        f"AE vs PCA | {metric} | test set (informative only)\n"
+        f"{n_patients} train patients | {splitname} | {experiment_name}"
+    )
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+ 
+    if save_path is None:
+        save_path = RESULTS_FOLDER / f"AEvsPC_{metric}_{splitname}_{n_patients}patients_{experiment_name}.png"
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {save_path}")
+
+def plot_ae_npatients_comparison(
+    results_folder,
+    model_names,
+    experiment_name,
+    splitname,
+    n_patients_list,
+    latdim_lists,
+    metrics_dataset="validation",
+    metric="R2",
+    xscale="log",
+    save_path=None,
+):
+    """
+    Compare AE architectures trained on different numbers of patients.
+ 
+    Style encoding:
+      - Color     → architecture (orange=AE3dCurrent, green=AE3dFCDeep, blue=AE3dConv)
+      - Linewidth → n_patients: thin (1.5) for fewer patients, thick (3) for more
+      - Marker    → n_patients: 'o' for fewer patients, 's' for more
+ 
+    Parameters
+    ----------
+    results_folder : Path or str
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    model_names : list of str
+        AE architectures to plot, e.g. ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"].
+    experiment_name : str
+        e.g. "baseline"
+    splitname : str
+        e.g. "split0"
+    n_patients_list : list of int
+        e.g. [100, 200] — must be sorted ascending.
+    latdim_lists : dict
+        {n_patients: [list of latent dims]}
+        e.g. {100: [4, 8, ..., 100], 200: [4, 8, ..., 200]}
+    metrics_dataset : str
+        "train", "validation", or "test".
+    metric : str
+        Metric to plot. Default "R2".
+    xscale : str
+        "log" or "linear".
+    save_path : Path or str or None
+    """
+    results_folder = Path(results_folder)
+ 
+    color_map = {
+        "AE3dCurrent": "orange",
+        "AE3dFCDeep":  "green",
+        "AE3dConv":    "blue",
+        "AE3dLinear":  "purple",
+    }
+ 
+    # Style by n_patients rank (thinnest = fewest patients)
+    n_sorted = sorted(n_patients_list)
+    linewidth_map = {n: 1 + 1.* i for i, n in enumerate(n_sorted)}
+    marker_map    = {n: ["o", "s", "^", "D"][i % 4] for i, n in enumerate(n_sorted)}
+    linestyle_map = {100: "dotted", 200: "solid"}
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+ 
+    for model_name in model_names:
+        color = color_map.get(model_name, "gray")
+ 
+        for n_patients in n_patients_list:
+            latdim_list = latdim_lists[n_patients]
+            lw     = linewidth_map[n_patients]
+            marker = marker_map[n_patients]
+            linestyle = linestyle_map[n_patients]
+
+            values, dims = [], []
+ 
+            for latent_dim in latdim_list:
+                simulation_name = f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+                model_dir = results_folder / simulation_name / experiment_name
+                pth_files = sorted(
+                    model_dir.glob("_best_*epochs.pth"),
+                    key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+                ) if model_dir.exists() else []
+                if len(pth_files) == 0:
+                    continue
+                best_epoch = int(pth_files[-1].stem.replace("_best_", "").replace("epochs", ""))
+ 
+                m = _load_summarymetrics(
+                    results_folder, simulation_name, experiment_name, best_epoch, metrics_dataset
+                )
+                if m is not None and metric in m:
+                    values.append(m[metric])
+                    dims.append(latent_dim)
+ 
+            if dims:
+                ax.plot(
+                    dims, values,
+                    color=color,
+                    linewidth=lw,
+                    linestyle = linestyle,
+                    marker=marker,
+                    markersize=5,
+                    label=f"{model_name} ({n_patients} patients)",
+                )
+ 
+    ax.set_xlabel("Latent dimension")
+    ax.set_ylabel(metric)
+    ax.set_xscale(xscale)
+    ax.set_title(
+        f"AE comparison — effect of n_patients | {metric} | {metrics_dataset} set\n"
+        f"{splitname} | {experiment_name}"
+    )
+    ax.set_xticks(sorted(set(d for dims in latdim_lists.values() for d in dims)))
+    ax.set_xticklabels([str(d) for d in sorted(set(d for dims in latdim_lists.values() for d in dims))],
+                       rotation=45, fontsize=8)
+    ax.legend(ncol=2, fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+ 
+    if save_path is None:
+        patients_str = "_".join(str(n) for n in n_patients_list)
+        save_path = RESULTS_FOLDER / (
+            f"AEnpatients_comparison_{metric}_{metrics_dataset}_{splitname}_{patients_str}patients_{experiment_name}.png"
+        )
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {save_path}")

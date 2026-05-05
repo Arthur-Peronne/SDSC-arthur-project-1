@@ -100,6 +100,55 @@ def load_allframes_resampled(only01=True):
 
     return all_img, all_gt
 
+def load_allframes_registered(folder="registered_frames", frame_type="ED"):
+    """
+    Return sorted paths to registered NIfTI files and their GT masks.
+ 
+    Parameters
+    ----------
+    folder : str
+        Subfolder inside TEMPODATA_FOLDER containing the registered files.
+    frame_type : str
+        "ED" → ED frame (frame01 for all patients, frame04 for patient090)
+        "ES" → ES frame (the other frame for each patient)
+ 
+    Returns
+    -------
+    all_img : list of str
+        Sorted paths to registered image files.
+    all_gt : list of str
+        Sorted paths to registered GT mask files.
+    """
+    if frame_type not in {"ED", "ES"}:
+        raise ValueError("frame_type must be 'ED' or 'ES'")
+ 
+    base = TEMPODATA_FOLDER / folder
+ 
+    if frame_type == "ED":
+        # frame01 for all patients except patient090 (frame04)
+        all_img = sorted(glob.glob(str(base / "patient*_frame01_registered.nii.gz")))
+        all_gt  = sorted(glob.glob(str(base / "patient*_frame01_registered_gt.nii.gz")))
+        img_90  = sorted(glob.glob(str(base / "patient090_frame04_registered.nii.gz")))
+        gt_90   = sorted(glob.glob(str(base / "patient090_frame04_registered_gt.nii.gz")))
+        all_img = sorted(all_img + img_90)
+        all_gt  = sorted(all_gt  + gt_90)
+ 
+    else:  # ES
+        # Everything except frame01 and patient090's frame04
+        all_img_raw = sorted(glob.glob(str(base / "patient*_frame*_registered.nii.gz")))
+        all_gt_raw  = sorted(glob.glob(str(base / "patient*_frame*_registered_gt.nii.gz")))
+ 
+        def _is_ES(path):
+            name = Path(path).name
+            if "patient090" in name:
+                return "_frame04_" not in name   # for patient090, ES = anything but frame04
+            else:
+                return "_frame01_" not in name   # for all others, ES = anything but frame01
+ 
+        all_img = sorted(p for p in all_img_raw if _is_ES(p))
+        all_gt  = sorted(p for p in all_gt_raw  if _is_ES(p))
+ 
+    return all_img, all_gt
 
 def load_allgt_res(onlytraining=False):
     """

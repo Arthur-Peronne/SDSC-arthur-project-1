@@ -269,7 +269,7 @@ class AutoEncoder3D_FCDeep(nn.Module):
         x_recon = self.decode(z)
         return x_recon, z
 
-
+        
 class AutoEncoder3D_Conv(nn.Module):
     """
     Model B:
@@ -389,6 +389,48 @@ class AutoEncoder3D_Conv(nn.Module):
         x_recon = self.decode_from_tensor(z_tensor)
         return x_recon, z
 
+class AutoEncoder3D_Linear(nn.Module):
+    """
+    Purely linear autoencoder — no convolutions, no activations.
+ 
+    Encoder: flatten -> nn.Linear(input_size, latent_dim)
+    Decoder: nn.Linear(latent_dim, input_size) -> reshape
+ 
+    With MSE loss and no non-linearities, this is theoretically equivalent
+    to PCA: the learned subspace should converge to the top-k principal
+    components (up to rotation within the subspace).
+ 
+    Input shape : (B, 1, 32, 128, 128)
+    Latent shape : (B, latent_dim)
+    """
+ 
+    def __init__(self, latent_dim=20, input_shape=(1, 32, 128, 128)):
+        super().__init__()
+ 
+        self.latent_dim = latent_dim
+        self.input_shape = input_shape
+        self.input_size = 1
+        for dim in input_shape:
+            self.input_size *= dim  # 1 * 32 * 128 * 128 = 524288
+ 
+        self.flatten = nn.Flatten()
+        self.fc_enc = nn.Linear(self.input_size, latent_dim, bias=True)
+        self.fc_dec = nn.Linear(latent_dim, self.input_size, bias=True)
+ 
+    def encode(self, x):
+        x = self.flatten(x)       # -> (B, 524288)
+        z = self.fc_enc(x)        # -> (B, latent_dim)
+        return z
+ 
+    def decode(self, z):
+        x = self.fc_dec(z)                     # -> (B, 524288)
+        x = x.view(-1, *self.input_shape)      # -> (B, 1, 32, 128, 128)
+        return x
+ 
+    def forward(self, x):
+        z = self.encode(x)
+        x_recon = self.decode(z)
+        return x_recon, z
 
 def build_autoencoder(model_name, latent_dimensions):
     """
@@ -403,5 +445,8 @@ def build_autoencoder(model_name, latent_dimensions):
     elif model_name == "AE3dConv":
         return AutoEncoder3D_Conv(latent_dim=latent_dimensions)
 
+    elif model_name == "AE3dLinear":
+        return AutoEncoder3D_Linear(latent_dim=latent_dimensions)
+        
     else:
         raise ValueError(f"Unknown model_name: {model_name}")

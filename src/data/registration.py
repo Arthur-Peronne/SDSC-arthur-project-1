@@ -143,7 +143,7 @@ def print_rigid_transform_info(transform):
         print(f"Translation Z: {tz:.3f}")
 
 
-def register_all_frames(reference_patient="patient001", crop_after_registration=True, crop_size_after_registration=(128, 128, 32), limit=1000):
+def register_all_frames(reference_patient="patient001", reference_frame="frame01", crop_after_registration=True, crop_size_after_registration=(128, 128, 32), limit=1000):    
     """
     Register all patients to a fixed reference.
 
@@ -152,17 +152,18 @@ def register_all_frames(reference_patient="patient001", crop_after_registration=
     """
     all_img_crop = sorted(ipd.load_allcroppedframes())
 
-    out_folder = TEMPODATA_FOLDER / "registered_framesBIS"
+    out_folder = TEMPODATA_FOLDER / "registered_frames"
     out_folder.mkdir(parents=True, exist_ok=True)
 
     # Find reference cropped image dynamically
     ref_img_crop_path = None
     for p in all_img_crop:
-        if Path(p).name.startswith(reference_patient + "_"):
+        name = Path(p).name
+        if name.startswith(f"{reference_patient}_{reference_frame}_"):
             ref_img_crop_path = p
             break
     if ref_img_crop_path is None:
-        raise ValueError(f"Reference patient {reference_patient} not found.")
+        raise ValueError(f"Reference {reference_patient}_{reference_frame} not found in cropped frames.")
 
     ref_crop_path = Path(ref_img_crop_path)
     ref_patient_id, ref_frame_id = ref_crop_path.stem.split("_")[:2]
@@ -212,12 +213,16 @@ def register_all_frames(reference_patient="patient001", crop_after_registration=
         moving_img_full_nii = nib.load(moving_img_full_path)
         moving_mask_full_nii = nib.load(moving_mask_full_path)
 
+        # reg_img_full_nii, reg_mask_full_nii, final_transform = rigid_register_one_patient(
+        #     fixed_img_full_nii, fixed_mask_full_nii, fixed_img_crop_nii,
+        #     moving_mask_crop_nii,
+        #     moving_img_full_nii, moving_mask_full_nii
+        # )
         reg_img_full_nii, reg_mask_full_nii, final_transform = rigid_register_one_patient(
-            fixed_img_full_nii, fixed_mask_full_nii, fixed_img_crop_nii,
+            fixed_img_full_nii, fixed_mask_full_nii, fixed_mask_crop_nii,  # ← utiliser le masque
             moving_mask_crop_nii,
             moving_img_full_nii, moving_mask_full_nii
         )
-
         if crop_after_registration:
             reg_img_nii, reg_mask_nii = crop_to_reference_window(
                 reg_img_full_nii, reg_mask_full_nii, fixed_img_crop_nii

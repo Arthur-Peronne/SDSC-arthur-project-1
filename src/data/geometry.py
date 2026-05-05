@@ -261,11 +261,11 @@ def crop_to_reference_window(img_nii, mask_nii, reference_img_crop_nii):
     return img_crop_nii, mask_crop_nii
 
 
-def crop_all_frames(crop_shape=(128, 128, 32), limit=1000):
+def crop_all_frames(only01 = True, crop_shape=(128, 128, 32), limit=1000):
     """
     Crop all resampled frames around their cardiac mask centroid and save results.
     """
-    all_img_res, all_gt_res = ipd.load_allframes_resampled()
+    all_img_res, all_gt_res = ipd.load_allframes_resampled(only01 = only01)
 
     for i in range(min(len(all_img_res), limit)):
 

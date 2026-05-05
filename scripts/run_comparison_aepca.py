@@ -21,7 +21,7 @@ from src.visualization import ae_plots as aep
 # ── User choices : WHICH PLOTS TO PRODUCE ────────────────────────────────────
 run_plot1_ae_comparison    = True   # AE vs AE, val set
 run_plot2_ae_vs_pca        = True   # AE vs PCA, test set (informative)
-run_plot3_npatients        = False   # AE 100 vs 200 patients comparison
+run_plot3_npatients        = True   # AE 100 vs 200 patients comparison
  
 # ── User choices : DATA ───────────────────────────────────────────────────────
 splitname = "split0"

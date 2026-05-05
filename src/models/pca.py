@@ -225,4 +225,3 @@ def plot_pcvalues_2d_metacat(X_reduced, pc_n1, pc_n2, metainfo_str, metainfo_lis
     ax1.set_yticks(np.linspace(-max_y, max_y, 7))
 
     plt.savefig(RESULTS_FOLDER / f"pc_allpatientsepoch0_{metainfo_str}_{pc_n1+1}and{pc_n2+1}.png")
-
