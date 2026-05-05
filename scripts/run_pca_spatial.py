@@ -17,13 +17,14 @@ from src.config import TEMPODATA_FOLDER, RESULTS_FOLDER
 from src.models import pca_spatial as pcs
 from src.models import pca as pc
 from src.training import ae_training as aet
+from src.visualization import ae_plots as aep
 
 # ── User choices : DATA ───────────────────────────────────────────────────────
 source_folder = "registered_frames"
 n_development = 120                 # train + validation patients
 n_validation = 20                   # validation patients
 splitname = "split0"
-recalculateX = True
+recalculateX = False
 
 # Frame selection
 use_both_frames = True             # True → ED+ES (300 patients), False → ED only
@@ -37,10 +38,10 @@ maskYS = False
 maskbin = False
 original_shape = (128, 128, 32)
 max_pc_calc = 300
-recalculatePCA = True
+recalculatePCA = False
 
 # ── User choices : RECONSTRUCTION METRICS ────────────────────────────────────
-compute_metrics = True
+compute_metrics = False
 latdim_list_pca = list(range(1, 200))  # 1 to 99 or 1 to 199
 
 # ── User choices : STANDALONE PLOTS ──────────────────────────────────────────
@@ -52,9 +53,17 @@ plot_eigenvectors_flag  = False     # slow — set True only when needed
 pc_n1, pc_n2 = 0, 1                # PC indices for 2D plots
 eigenvectors_toplot = 10
 
+# ── User choices : RECONSTRUCTION ───────────────────────────────────────────── 
+plot_reconstruction    = True      # set True to reconstruct and plot selected patients
+latent_dim_plot = 120         # latent dim to use for reconstruction
+recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
+patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
+
 # ── Derived parameters ────────────────────────────────────────────────────────
 n_train = n_development - n_validation
 n_train_images = n_train * 2 if use_both_frames else n_train
+n_val_images = n_validation * 2 if use_both_frames else n_validation
+
 frame_tag = "ED+ES" if use_both_frames else frame_type  # "ED", "ES", ou "ED+ES"
 save_suffix = ""
 if maskYS: save_suffix += "_gt"
@@ -79,7 +88,7 @@ if use_both_frames:
     X_ED = _load_X("ED")
     X_ES = _load_X("ES")
     if X_ED.shape != X_ES.shape:
-        raise ValueError(...)
+        raise  ValueError(f"Shape mismatch: X_ED={X_ED.shape} vs X_ES={X_ES.shape}")
     # split + concatenate
     X_train = np.concatenate([X_ED[:n_train], X_ES[:n_train]], axis=0)
     X_val   = np.concatenate([X_ED[n_train:n_development], X_ES[n_train:n_development]], axis=0)
@@ -89,11 +98,6 @@ else:
     X_train = X[:n_train]
     X_val   = X[n_train:n_development]
     X_test  = X[n_development:]
-
-print(f"Frame tag : {frame_tag}")
-print(f"Train     : {X_train.shape[0]} patients")
-print(f"Val       : {X_val.shape[0]} patients")
-print(f"Test      : {X_test.shape[0]} patients")
 
 # ── PCA training (on train set only) ─────────────────────────────────────────
 pca_name = f"PCA_{n_train_images}patients_{splitname}_{frame_tag}"
@@ -118,46 +122,23 @@ else:
 
 # ── Reconstruction metrics ────────────────────────────────────────────────────
 if compute_metrics:
-    for latent_dimensions in latdim_list_pca:
 
-        for metrics_dataset, X_flat, X_pca_sub, offset in [
-            ("train",      X_train, X_train_pca, 0),
-            ("validation", X_val,   X_val_pca,   n_train),
-            ("test",       X_test,  X_test_pca,  n_development),
-        ]:
-            all_metrics = []
-
-            for i, x_patient_flat in enumerate(X_flat):
-                x_recon_flat = (
-                    X_pca_sub[i, :latent_dimensions]
-                    @ pca.components_[:latent_dimensions, :]
-                    + pca.mean_
-                )
-                x_patient_3d = x_patient_flat.reshape(original_shape)
-                x_recon_3d   = x_recon_flat.reshape(original_shape)
-
-                metrics = aet.reconstruction_metrics(
-                    x_true=x_patient_3d,
-                    x_pred=x_recon_3d,
-                    patient_number=offset + 1 + i,
-                    simulation_name=pca_name,
-                    n_epochs=None,
-                    metrics_dataset=metrics_dataset,
-                    savemetrics=False,
-                )
-                all_metrics.append(metrics)
-
-            aet.ae_aggregate_metrics(
-                all_metrics,
-                simulation_name=pca_name,
-                experiment_name= f"{latent_dimensions}dims",
-                n_epochs=None,
+    for metrics_dataset, X_flat, X_pca_sub, offset in [
+        ("train",      X_train, X_train_pca, 0),
+        ("validation", X_val,   X_val_pca,   n_train_images),
+        ("test",       X_test,  X_test_pca,  n_train_images + n_val_images),
+    ]:
+        for latent_dimensions in latdim_list_pca:
+            pcs.pca_compute_metrics(
+                X_flat=X_flat,
+                X_pca=X_pca_sub,
+                pca=pca,
+                latent_dimensions=latent_dimensions,
+                offset=offset,
+                pca_name=pca_name,
                 metrics_dataset=metrics_dataset,
-                ae = False,
-            )
-            print(
-                f"[PCA {latent_dimensions}dims | {metrics_dataset}] "
-                f"R2 mean = {np.mean([m['R2'] for m in all_metrics]):.4f}"
+                original_shape=original_shape,
+                pca_folder=pca_folder,
             )
 
 # ── Standalone PCA plots ──────────────────────────────────────────────────────
@@ -188,4 +169,73 @@ if plot_eigenvectors_flag:
         original_shape,
         save_suffix,
         eigenvectors_toplot=min(eigenvectors_toplot, max_pc_calc),
+    )
+
+# ── PCA reconstruction plots  ──────────────────────────────────────────────────────
+if plot_reconstruction:
+ 
+    # Calculate means to re-center images in plot
+    row_means_train = meta["row_means"]   # shape (n_train_images, 1)
+    if not maskbin:
+        row_means_val   = X_val.mean(axis=1,  keepdims=True)   # before centering
+        row_means_test  = X_test.mean(axis=1, keepdims=True)
+    else:
+        row_means_val  = np.zeros((X_val.shape[0],  1))
+        row_means_test = np.zeros((X_test.shape[0], 1))
+    
+    # Select the right split for auto selection
+    X_flat_plot, X_pca_plot, offset_plot = X_test, X_test_pca, n_train_images + n_val_images
+ 
+    # Recompute metrics for latent_dim_plot on all patients of the split
+    all_metrics_plot = []
+    for i, x_patient_flat in enumerate(X_flat_plot):
+        x_recon_flat = (
+            X_pca_plot[i, :latent_dim_plot]
+            @ pca.components_[:latent_dim_plot, :]
+            + pca.mean_
+        )
+        x_patient_3d = x_patient_flat.reshape(original_shape)
+        x_recon_3d   = x_recon_flat.reshape(original_shape)
+ 
+        metrics = aet.reconstruction_metrics(
+            x_true=x_patient_3d,
+            x_pred=x_recon_3d,
+            patient_number=offset_plot + 1 + i,
+            simulation_name=pca_name,
+            n_epochs=None,
+            metrics_dataset="test",
+            savemetrics=False,
+        )
+        all_metrics_plot.append(metrics)
+ 
+    # Select patients to reconstruct
+    if recons_auto:
+        selected = aep.ae_select_representative_patients(
+            all_metrics_plot,
+            use_both_frames=use_both_frames,
+            n_train_images=n_train_images,
+            n_val_images=n_val_images,
+            n_development=n_development,
+        )
+        patients_torecons = [(v["real_patient"], v["frame_type"]) for v in selected.values()]
+    else:
+        patients_torecons = patients_torecons_manual
+
+    # Plot
+    aep.pca_plotcompare_selected(
+        patients_torecons=patients_torecons,
+        X_train_pca=X_train_pca,
+        X_val_pca=X_val_pca,
+        X_test_pca=X_test_pca,
+        pca=pca,
+        latent_dimensions=latent_dim_plot,
+        original_shape=original_shape,
+        use_both_frames=use_both_frames,
+        n_development=n_development,
+        n_train_images=n_train_images,
+        n_val_images=n_val_images,
+        split_name=splitname,
+        row_means_train=row_means_train,
+        row_means_val=row_means_val,
+        row_means_test=row_means_test,
     )

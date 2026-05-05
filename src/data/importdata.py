@@ -240,7 +240,7 @@ def get_patient_acdc_path(patient_id, file_type="frame", base_path=None, check_e
     return full_path
 
 
-def get_patient_modified_path(patient_id, folder, file_type="frame", base_path=None, check_exists=False):
+def get_patient_modified_path(patient_id, folder, file_type="frame", frame_type="ED", base_path=None, check_exists=False):
     """
     Return the path to a modified (e.g. registered) NIfTI file for a given patient.
 
@@ -266,25 +266,29 @@ def get_patient_modified_path(patient_id, folder, file_type="frame", base_path=N
     """
     if base_path is None:
         base_path = TEMPODATA_FOLDER
-
     base_path = Path(base_path)
 
     if not (1 <= patient_id <= 150):
         raise ValueError("patient_id must be between 1 and 150")
-
     if file_type not in {"frame", "mask"}:
         raise ValueError("file_type must be 'frame' or 'mask'")
+    if frame_type not in {"ED", "ES"}:
+        raise ValueError("frame_type must be 'ED' or 'ES'")
 
     patient_str = f"patient{patient_id:03d}"
 
-    frame_num = 4 if patient_id == 90 else 1
-    frame_str = f"frame{frame_num:02d}"
+    if frame_type == "ED":
+        frame_num = 4 if patient_id == 90 else 1
+        frame_str = f"frame{frame_num:02d}"
+    else:  # ES — need to find the ES frame dynamically
+        all_img, _ = load_allframes_registered(folder=folder, frame_type="ES")
+        matching = [p for p in all_img if f"{patient_str}_" in Path(p).name]
+        if len(matching) == 0:
+            raise FileNotFoundError(f"No ES frame found for {patient_str} in {folder}")
+        frame_str = Path(matching[0]).name.split("_")[1]  # extract frameXX
 
-    if file_type == "frame":
-        filename = f"{patient_str}_{frame_str}_registered.nii.gz"
-    else:
-        filename = f"{patient_str}_{frame_str}_registered_gt.nii.gz"
-
+    suffix = "_registered_gt" if file_type == "mask" else "_registered"
+    filename = f"{patient_str}_{frame_str}{suffix}.nii.gz"
     full_path = base_path / folder / filename
 
     if check_exists and not full_path.exists():

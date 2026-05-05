@@ -17,14 +17,14 @@ from src.visualization import mri_plots as mrp
 from src.training.ae_training import ae_reconstructX
 
 
-def ae_plotcompare_onepatient(x_recon_denorm, patient_number, folder_originals, splitname, latent_dimensions, details_rec="AErec"):
+def ae_plotcompare_onepatient(x_recon_denorm, patient_number, folder_originals, ae_str,  pat_str , details_str="REGvoxROI", frame_type="ED"):
     """
     Plot original (ROI-masked) and reconstructed image for one patient.
     """
-    ini_path = ipd.get_patient_modified_path(patient_number, folder_originals)
+    ini_path = ipd.get_patient_modified_path(patient_number, folder_originals, frame_type=frame_type)
     ini_nii = nib.load(ini_path)
     reconstructed_nii = nib.Nifti1Image(x_recon_denorm.astype(np.float32), affine=ini_nii.affine, header=ini_nii.header.copy())
-    inimask_path = ipd.get_patient_modified_path(patient_number, folder_originals, file_type="mask")
+    inimask_path = ipd.get_patient_modified_path(patient_number, folder_originals, file_type="mask", frame_type=frame_type)
     inimask_nii = nib.load(inimask_path)
     ini_data = ini_nii.get_fdata(dtype=np.float32)
     mask_data = inimask_nii.get_fdata(dtype=np.float32)
@@ -32,8 +32,9 @@ def ae_plotcompare_onepatient(x_recon_denorm, patient_number, folder_originals, 
     ini_data_roi = ini_data.copy()
     ini_data_roi[~mask_bin] = 0.0
     ini_nii_roi = nib.Nifti1Image(ini_data_roi.astype(np.float32), affine=ini_nii.affine, header=ini_nii.header.copy())
-    mrp.plot_oneimg(ini_nii_roi, cmapYN=False, patient_str="original", file_str="patient" + repr(patient_number), details_str="REGvoxROI")
-    mrp.plot_oneimg(reconstructed_nii, cmapYN=False, cmap="", patient_str=splitname + "_" + repr(latent_dimensions) + "dims", file_str="patient" + repr(patient_number), details_str=details_rec)
+    mrp.plot_oneimg(ini_nii_roi, cmapYN=False, patient_str=pat_str, file_str= "original", details_str=details_str)
+    mrp.plot_oneimg(reconstructed_nii, cmapYN=False, cmap="", patient_str= pat_str , file_str=ae_str, details_str=details_str)
+
 
 def _decode_patient_number(patient_number, n_train_images, n_val_images, n_development, use_both_frames):
     """
@@ -76,9 +77,9 @@ def _decode_patient_number(patient_number, n_train_images, n_val_images, n_devel
     return real_patient, frame_type
 
 def ae_plotcompare_selected(
-    patient_numbers,
-    use_both_frames, 
-    n_development, 
+    patients_torecons,
+    use_both_frames,
+    n_development,
     n_train_images,
     n_val_images,
     train_dataset,
@@ -86,38 +87,59 @@ def ae_plotcompare_selected(
     X_maxnorm,
     model,
     model_name,
-    splitname,
+    split_name,
     latent_dimensions,
     n_epochs,
-    metrics_dataset="test",
-    validation_dataset=None
+    validation_dataset=None,
 ):
     """
-    Plot reconstruction for selected patients, either from train or test dataset.
+    Plot AE reconstruction for selected patients.
+ 
+    Parameters
+    ----------
+    patients_torecons : list of (int, str)
+        List of (real_patient, frame_type) tuples, e.g. [(124, "ED"), (50, "ES")].
+        As returned by ae_select_representative_patients or defined manually.
+    use_both_frames : bool
+    n_development : int
+    n_train_images : int
+    n_val_images : int
+    train_dataset : TensorDataset
+    test_dataset : TensorDataset
+    X_maxnorm : float
+    model : nn.Module
+    model_name : str
+    split_name : str
+    latent_dimensions : int
+    n_epochs : int
+    metrics_dataset : str
+    validation_dataset : TensorDataset or None
     """
-    if metrics_dataset not in {"train", "validation", "test"}:
-        raise ValueError("metrics_dataset must be 'train' or 'test'")
+    for real_patient, frame_type in patients_torecons:
 
-    for patient_number in patient_numbers:
+        n_train_real = n_train_images // 2 if use_both_frames else n_train_images
 
-        if metrics_dataset == "test":
-            dataset = test_dataset
-            idx = patient_number - (n_train_images + n_val_images + 1)
-        elif metrics_dataset == "validation":
-            dataset = validation_dataset
-            if dataset is None:
-                raise ValueError("validation_dataset is None but metrics_dataset='validation'")
-            idx = patient_number - (n_train_images + 1)
-        else:
+        if real_patient <= n_train_real:
             dataset = train_dataset
-            idx = patient_number - 1
+            pos = real_patient - 1
+        elif real_patient <= n_development:
+            dataset = validation_dataset
+            if validation_dataset is None:
+                raise ValueError("validation_dataset is None")
+            pos = real_patient - n_train_real - 1
+        else:
+            dataset = test_dataset
+            pos = real_patient - n_development - 1
 
-        real_patient, frame_type = _decode_patient_number(
-            patient_number, n_train_images, n_val_images, n_development, use_both_frames
-        )
+        if use_both_frames and frame_type == "ES":
+            pos += len(dataset) // 2
+
+        idx = pos
 
         if idx < 0 or idx >= len(dataset):
-            raise IndexError(f"Invalid index computed: {idx} for patient {patient_number}")
+            raise IndexError(
+                f"Invalid index {idx} for patient {real_patient} ({frame_type})"
+            )
 
         patient_tensor = dataset[idx]
         x_patient, x_recon_denorm = ae_reconstructX(patient_tensor, X_maxnorm, model)
@@ -126,10 +148,12 @@ def ae_plotcompare_selected(
             x_recon_denorm,
             real_patient,
             "registered_frames",
-            splitname,
-            latent_dimensions,
-            details_rec=f"{model_name}_{n_epochs}epochs_{metrics_dataset}_{frame_type}"
+            ae_str=f"{model_name}_{split_name}_{latent_dimensions}dims_{n_epochs}epochs",
+            pat_str=f"patient{real_patient}",
+            details_str=f"{frame_type}",
+            frame_type=frame_type
         )
+
 
 def _parse_summarymetrics_file(filepath):
     """
@@ -1522,3 +1546,191 @@ def plot_ae_npatients_comparison(
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {save_path}")
+
+def pca_plotcompare_selected(
+    patients_torecons,
+    X_train_pca,
+    X_val_pca,
+    X_test_pca,
+    pca,
+    latent_dimensions,
+    original_shape,
+    use_both_frames,
+    n_development,
+    n_train_images,
+    n_val_images,
+    split_name,
+    row_means_train,
+    row_means_val,
+    row_means_test,
+):
+    """
+    Plot PCA reconstruction for selected patients.
+ 
+    row_means_{train/val/test} are the per-patient means subtracted before PCA,
+    needed to correctly de-center the reconstruction.
+    Shape: (n_images_in_split, 1)
+    """
+    n_train_real = n_train_images // 2 if use_both_frames else n_train_images
+ 
+    for real_patient, frame_type in patients_torecons:
+ 
+        # Deduce split, PCA matrix, row_means and position from real patient number
+        if real_patient <= n_train_real:
+            X_pca_sub  = X_train_pca
+            row_means  = row_means_train
+            pos = real_patient - 1
+        elif real_patient <= n_development:
+            X_pca_sub  = X_val_pca
+            row_means  = row_means_val
+            pos = real_patient - n_train_real - 1
+        else:
+            X_pca_sub  = X_test_pca
+            row_means  = row_means_test
+            pos = real_patient - n_development - 1
+ 
+        # ES frames stored after ED frames within the split
+        if use_both_frames and frame_type == "ES":
+            pos += len(X_pca_sub) // 2
+ 
+        idx = pos
+ 
+        if idx < 0 or idx >= len(X_pca_sub):
+            raise IndexError(
+                f"Invalid index {idx} for patient {real_patient} ({frame_type})"
+            )
+ 
+        # Reconstruct — add back per-patient mean to de-center
+        patient_row_mean = float(row_means[idx, 0])
+        x_recon_flat = (
+            X_pca_sub[idx, :latent_dimensions]
+            @ pca.components_[:latent_dimensions, :]
+            + pca.mean_
+            + patient_row_mean      # ← de-centering
+        )
+        x_recon_3d = x_recon_flat.reshape(original_shape)
+        
+        ae_plotcompare_onepatient(
+            x_recon_3d,
+            real_patient,
+            "registered_frames",
+            ae_str=f"PCA_{split_name}_{latent_dimensions}dims",
+            pat_str=f"patient{real_patient}",
+            details_str=f"{frame_type}",
+            frame_type=frame_type
+        )
+
+
+
+# def _encode_patient_to_idx(
+#     real_patient,
+#     frame_type,
+#     metrics_dataset,
+#     n_train_images,
+#     n_val_images,
+#     n_development,
+#     use_both_frames,
+# ):
+#     """
+#     Convert (real_patient, frame_type) to an index in the split TensorDataset.
+ 
+#     This is the inverse of _decode_patient_number.
+ 
+#     Parameters
+#     ----------
+#     real_patient : int
+#         Real patient number (1-150).
+#     frame_type : str
+#         "ED" or "ES".
+#     metrics_dataset : str
+#         "train", "validation", or "test".
+#     n_train_images : int
+#         Number of train images (100 or 200).
+#     n_val_images : int
+#         Number of val images (20 or 40).
+#     n_development : int
+#         Number of development patients (train + val real patients, e.g. 120).
+#     use_both_frames : bool
+ 
+#     Returns
+#     -------
+#     idx : int
+#         Index into the TensorDataset for this split.
+#     """
+#     n_train_real = n_train_images // 2 if use_both_frames else n_train_images
+#     n_val_real   = n_val_images   // 2 if use_both_frames else n_val_images
+#     n_test_real  = 150 - n_development
+ 
+#     if metrics_dataset == "train":
+#         split_offset = 0
+#         split_size   = n_train_real
+#     elif metrics_dataset == "validation":
+#         split_offset = n_train_real
+#         split_size   = n_val_real
+#     else:  # test
+#         split_offset = n_development
+#         split_size   = n_test_real
+ 
+#     # 0-based position of this patient within its split
+#     pos = real_patient - split_offset - 1
+ 
+#     # ES frames are stored after all ED frames within the split
+#     if use_both_frames and frame_type == "ES":
+#         pos += split_size
+ 
+#     return pos
+
+def ae_select_representative_patients(
+    all_metrics,
+    use_both_frames=False,
+    n_train_images=None,
+    n_val_images=None,
+    n_development=None,
+):
+    """
+    Select worst, best, and closest-to-mean R2 patients.
+ 
+    If use_both_frames=True and n_train_images/n_val_images/n_development are
+    provided, internal patient numbers are decoded to (real_patient, frame_type).
+    Otherwise, patient numbers are returned as-is with frame_type="ED".
+ 
+    Returns
+    -------
+    selected : dict
+        {
+          "worst":           {"real_patient": int, "frame_type": str, "R2": float},
+          "best":            {"real_patient": int, "frame_type": str, "R2": float},
+          "closest_to_mean": {"real_patient": int, "frame_type": str, "R2": float},
+        }
+    """
+    r2_values      = np.array([m["R2"] for m in all_metrics], dtype=np.float32)
+    patient_numbers = np.array([m["patient_number"] for m in all_metrics], dtype=int)
+ 
+    mean_r2  = np.mean(r2_values)
+    idx_min  = np.argmin(r2_values)
+    idx_max  = np.argmax(r2_values)
+    idx_mean = np.argmin(np.abs(r2_values - mean_r2))
+ 
+    can_decode = (
+        use_both_frames
+        and n_train_images is not None
+        and n_val_images is not None
+        and n_development is not None
+    )
+ 
+    selected = {}
+    for label, idx in [("worst", idx_min), ("best", idx_max), ("closest_to_mean", idx_mean)]:
+        pn = int(patient_numbers[idx])
+        if can_decode:
+            real_patient, frame_type = _decode_patient_number(
+                pn, n_train_images, n_val_images, n_development, use_both_frames
+            )
+        else:
+            real_patient, frame_type = pn, "ED"
+        selected[label] = {
+            "real_patient": real_patient,
+            "frame_type":   frame_type,
+            "R2":           float(r2_values[idx]),
+        }
+ 
+    return selected

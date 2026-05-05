@@ -12,13 +12,13 @@ from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
 
 # User choices : DATA
-images_folder = "registered_frames"
-n_training = 100
+images_folder = "registered_framesBIS"
+n_training = 120
 splitname = "split0"
 # User choices : MODEL
-latdim_list =  [4, 8, 12, 20, 28, 40, 60, 80, 99] # [1,2,3,4,5,7,10,15,20,30,40,50,80,119]
+latdim_list = [1,2,3,4,5,7,10,15,20,30,40,50,80,119]
 # User choices : METRICS 
-# metrics_dataset = "train"   # "test" or "train"
+metrics_dataset = "train"   # "test" or "train"
 # User choices : RECONSTRUCTION 
 patient_toplot = 144
 latent_dim_plot = 119
@@ -66,4 +66,4 @@ else:
 # Plot
 x_recon_denorm_flat_j = x_plot_pca[idx_plot, :latent_dim_plot] @ pca.components_[:latent_dim_plot, :] + pca.mean_
 x_recon_denorm_j = x_recon_denorm_flat_j.reshape(128,128,32)
-aep.ae_plotcompare_onepatient(x_recon_denorm_j, patient_toplot, "registered_frames", splitname, latent_dim_plot,  details_rec = "PCArec")
+aep.ae_plotcompare_onepatient(x_recon_denorm_j, patient_toplot, "registered_framesBIS", splitname, latent_dim_plot,  details_rec = "PCArec")

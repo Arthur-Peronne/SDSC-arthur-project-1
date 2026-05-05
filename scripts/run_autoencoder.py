@@ -31,7 +31,9 @@ batch_size = 1                  # baseline: 1
 lr = 1e-5                      # baseline: 1e-5, 1e-6 for Linear
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
-reconstruction = True 
+plot_reconstruction = True 
+recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct
+patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 n_train_effective = n_development - n_validation
@@ -168,28 +170,35 @@ else:
                 )
 
 # ── Plot reconstruction for representative patients ───────────────────────────
-if reconstruction:
-    selected_patients = aet.ae_select_representative_patients(all_metrics)
-    patient_numbers = [v["patient_number"] for v in selected_patients.values()]
+if plot_reconstruction:
+    if recons_auto:
+        selected = aep.ae_select_representative_patients(
+            all_metrics,
+            use_both_frames=use_both_frames,
+            n_train_images=n_train_images,
+            n_val_images=n_val_images,
+            n_development=n_development,
+        )
+        patients_torecons = [(v["real_patient"], v["frame_type"]) for v in selected.values()]
+    else:
+        patients_torecons = patients_torecons_manual
 
     aep.ae_plotcompare_selected(
-        patient_numbers=patient_numbers,
-        use_both_frames=use_both_frames, 
-        n_development=n_development, 
-        n_train_images = n_train_images,
-        n_val_images = n_val_images,
+        patients_torecons=patients_torecons,
+        use_both_frames=use_both_frames,
+        n_development=n_development,
+        n_train_images=n_train_images,
+        n_val_images=n_val_images,
         train_dataset=train_dataset,
         test_dataset=test_dataset,
         X_maxnorm=X_maxnorm,
         model=model,
         model_name=model_name,
-        splitname=splitname,
+        split_name=splitname,
         latent_dimensions=latent_dimensions,
         n_epochs=best_epoch,
-        metrics_dataset=metrics_dataset,
         validation_dataset=validation_dataset,
     )
-
 
 
 

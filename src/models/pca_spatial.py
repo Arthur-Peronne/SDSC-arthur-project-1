@@ -14,6 +14,7 @@ from src.config import TEMPODATA_FOLDER
 from src.visualization import mri_plots as mrp
 from src.data import importdata as ipd
 from src.models import pca as pf
+from src.training import ae_training as aet
 
 def _load_and_flatten_nii(path, binary_mask=False, image_roi_only=False, roi_mask_path=None, flatten=True):
     """
@@ -176,33 +177,61 @@ def get_vectorsarray(
 
 def pca_patients(X, pca_folder, pca_description, normalize_rows=True, recalculatePCA=False, max_pc_calc=1000, addstring=""):
     """
+    Fit PCA on X and save results.
+ 
+    If normalize_rows=True, each row (patient) is centered before PCA.
+    The per-patient means are saved in meta["row_means"] so that
+    reconstructions can be correctly de-centered afterwards.
+ 
+    Parameters
+    ----------
+    X : np.ndarray, shape (n_patients, n_voxels)
+    pca_folder : str
+    pca_description : str
+    normalize_rows : bool
+    recalculatePCA : bool
+    max_pc_calc : int
+    addstring : str
+ 
+    Returns
+    -------
+    pca : sklearn PCA
+    X_pca : np.ndarray, shape (n_patients, n_components)
+    meta : dict  — includes "row_means" key
     """
-
     folder_name = TEMPODATA_FOLDER / pca_folder / f"{pca_description}"
-
+ 
     if recalculatePCA:
+        # Save row means BEFORE centering so they can be used for reconstruction
         if normalize_rows:
-            X -= X.mean(axis=1, keepdims=True)
+            row_means = X.mean(axis=1, keepdims=True)   # shape (n_patients, 1)
+            X -= row_means
+        else:
+            row_means = np.zeros((X.shape[0], 1), dtype=X.dtype)
+ 
         pca = PCA(n_components=min(X.shape[0], max_pc_calc))
         X_pca = pca.fit_transform(X)
-        # Save 
+ 
         folder_name.mkdir(parents=True, exist_ok=True)
         joblib.dump(pca, folder_name / f"_pca{addstring}.joblib", compress=3)
         np.save(folder_name / f"_X_pca{addstring}.npy", X_pca)
+ 
         meta = {
             "n_patients": X.shape[0],
             "n_features": X.shape[1],
             "n_components": pca.n_components_,
             "explained_variance_ratio_": pca.explained_variance_ratio_,
+            "row_means": row_means,   # shape (n_patients, 1) — needed for reconstruction
         }
         joblib.dump(meta, folder_name / f"_meta{addstring}.joblib", compress=3)
-
+ 
     else:
-        pca = joblib.load(folder_name / f"_pca{addstring}.joblib")
+        pca   = joblib.load(folder_name / f"_pca{addstring}.joblib")
         X_pca = np.load(folder_name / f"_X_pca{addstring}.npy")
-        meta = joblib.load(folder_name / f"_meta{addstring}.joblib")
-
+        meta  = joblib.load(folder_name / f"_meta{addstring}.joblib")
+ 
     return pca, X_pca, meta
+
 
 
 def plot_eigenvectors(X, pca, original_shape, pca_description, eigenvectors_toplot=10):
@@ -259,3 +288,82 @@ def plot_pca_patientmeta(X_pca, pc_n1, pc_n2):
     pf.plot_pcvalues_2d_meta(X_pca, pc_n1, pc_n2, "Height", height_list)
     pf.plot_pcvalues_2d_meta(X_pca, pc_n1, pc_n2, "Weight", weight_list)
     pf.plot_pcvalues_2d_metacat(X_pca, pc_n1, pc_n2, "Group", group_list)
+
+
+
+def pca_compute_metrics(
+    X_flat,
+    X_pca,
+    pca,
+    latent_dimensions,
+    offset,
+    pca_name,
+    metrics_dataset,
+    original_shape,
+    pca_folder,
+    savemetrics=False,
+):
+    """
+    Compute reconstruction metrics for a list of latent dimensions.
+ 
+    Parameters
+    ----------
+    X_flat : np.ndarray, shape (n_patients, n_voxels)
+        Original (centered) patient images for this split.
+    X_pca : np.ndarray, shape (n_patients, n_components)
+        PCA-projected data for this split.
+    pca : sklearn PCA object
+        Fitted PCA model.
+    latent_dimension : int
+        Latent dimension to evaluate.
+    offset : int
+        Patient number offset for this split (0 for train, n_train_images for val, etc.)
+    pca_name : str
+        e.g. "PCA_200patients_split0_ED+ES"
+    metrics_dataset : str
+        "train", "validation", or "test"
+    original_shape : tuple
+        3D shape of images, e.g. (128, 128, 32).
+    pca_folder : str
+        Subfolder in TEMPODATA_FOLDER for saving results.
+    savemetrics : bool
+        If True, save individual patient metrics to disk.
+    """
+ 
+    all_metrics = []
+
+    for i, x_patient_flat in enumerate(X_flat):
+        x_recon_flat = (
+            X_pca[i, :latent_dimensions]
+            @ pca.components_[:latent_dimensions, :]
+            + pca.mean_
+        )
+        x_patient_3d = x_patient_flat.reshape(original_shape)
+        x_recon_3d   = x_recon_flat.reshape(original_shape)
+
+        metrics = aet.reconstruction_metrics(
+            x_true=x_patient_3d,
+            x_pred=x_recon_3d,
+            patient_number=offset + 1 + i,
+            simulation_name=pca_name,
+            n_epochs=None,
+            metrics_dataset=metrics_dataset,
+            savemetrics=savemetrics,
+        )
+        all_metrics.append(metrics)
+
+    aet.ae_aggregate_metrics(
+        all_metrics,
+        simulation_name=pca_name,
+        experiment_name=f"{latent_dimensions}dims",
+        n_epochs=None,
+        metrics_dataset=metrics_dataset,
+        ae=False,
+    )
+    
+    print(
+            f"[PCA {latent_dimensions}dims | {metrics_dataset}] "
+            f"R2 mean = {np.mean([m['R2'] for m in all_metrics]):.4f}"
+        )
+
+    return all_metrics

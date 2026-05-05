@@ -397,38 +397,6 @@ def ae_aggregate_metrics(all_metrics, simulation_name, n_epochs, metrics_dataset
 
     return summary
 
-def ae_select_representative_patients(all_metrics):
-    """
-    Select:
-    - patient with lowest R2
-    - patient with highest R2
-    - patient with R2 closest to mean R2
-    """
-    r2_values = np.array([m["R2"] for m in all_metrics], dtype=np.float32)
-    patient_numbers = np.array([m["patient_number"] for m in all_metrics], dtype=int)
-
-    mean_r2 = np.mean(r2_values)
-
-    idx_min = np.argmin(r2_values)
-    idx_max = np.argmax(r2_values)
-    idx_mean = np.argmin(np.abs(r2_values - mean_r2))
-
-    selected = {
-        "worst": {
-            "patient_number": int(patient_numbers[idx_min]),
-            "R2": float(r2_values[idx_min]),
-        },
-        "best": {
-            "patient_number": int(patient_numbers[idx_max]),
-            "R2": float(r2_values[idx_max]),
-        },
-        "closest_to_mean": {
-            "patient_number": int(patient_numbers[idx_mean]),
-            "R2": float(r2_values[idx_mean]),
-        },
-    }
-
-    return selected
 
 def _compute_validation_loss(model, validation_dataset, batch_size, device, criterion):
     """
