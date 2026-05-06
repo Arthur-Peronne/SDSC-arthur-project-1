@@ -174,6 +174,7 @@ def ae_training(
     recalculateAE=True,
     batch_size=1,
     lr=1e-3,
+    dropout_rate=0.0,           
     checkpoint_epochs=None
 ):
     """
@@ -208,7 +209,7 @@ def ae_training(
 
     if recalculateAE:
 
-        model = build_autoencoder(model_name, latent_dimensions).to(device)
+        model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
 
         loader = DataLoader(
             dataset,
@@ -433,7 +434,10 @@ def ae_training_early_stopping(
     batch_size=1,
     lr=1e-3,
     patience=40,
-    patience_scheduler=None,      
+    patience_scheduler=None,  
+    weight_decay=0.0,           # L2 regularisation
+    dropout_rate=0.0,           
+    noise_std=0.0,              # denoising AE    
     recalculateAE=True,
     load_epoch=None,
     experiment_name="baseline",  
@@ -460,8 +464,21 @@ def ae_training_early_stopping(
         Maximum number of training epochs.
     batch_size : int
     lr : float
+    weight_decay : float
+        L2 regularisation coefficient passed to Adam optimizer.
+        0.0 = no regularisation (baseline). Try 1e-5, 1e-4.
+    dropout_rate : float
+        Dropout probability applied on FC layers of AE3dFCDeep (and others ????)
+        0.0 = no dropout (baseline). Try 0.1, 0.2.
+        Automatically disabled during validation (model.eval()).
+    noise_std : float
+        Std of Gaussian noise added to input during training only (denoising AE).
+        0.0 = no noise (baseline). Try 0.05, 0.1.
+        Loss is always computed against the clean input x, not the noisy x̃.
     patience : int
-        Number of epochs without validation improvement before stopping.
+        Epochs without val improvement before early stopping. Default 40.
+    patience_scheduler : int or None
+        Patience for ReduceLROnPlateau. If None, set to patience // 5.
     recalculateAE : bool
         If False, load an existing best model instead of training.
     load_epoch : int or None
@@ -483,9 +500,12 @@ def ae_training_early_stopping(
     {simulation_name}/_best_{best_epoch}epochs.pth
     {simulation_name}/_best_{best_epoch}epochs_loss.txt
     """
+
+    if patience_scheduler is None:
+        patience_scheduler = patience // 5
+
     device = get_device()
     output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name / experiment_name
-    # output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name
     output_dir.mkdir(parents=True, exist_ok=True)
  
     # ── Load existing model ───────────────────────────────────────────────────
@@ -535,7 +555,7 @@ def ae_training_early_stopping(
         return model, load_epoch, loss_history
  
     # ── Training ─────────────────────────────────────────────────────────────
-    model = build_autoencoder(model_name, latent_dimensions).to(device)
+    model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
  
     train_loader = DataLoader(
         train_dataset,
@@ -543,12 +563,12 @@ def ae_training_early_stopping(
         shuffle=True,
         pin_memory=(device.type == "cuda")
     )
-    
-    if patience_scheduler is None:
-        patience_scheduler = int(patience/5)
 
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(
+        model.parameters(), 
+        lr=lr, 
+        weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode="min",
@@ -576,8 +596,16 @@ def ae_training_early_stopping(
  
         for (x_batch,) in train_loader:
             x_batch = x_batch.to(device, non_blocking=(device.type == "cuda"))
+
+            # Add noise if asked 
+            if noise_std > 0.0:
+                x_noisy = x_batch + torch.randn_like(x_batch) * noise_std
+                x_noisy = torch.clamp(x_noisy, 0.0, 1.0)  # keep in [0,1]
+            else:
+                x_noisy = x_batch
+
             optimizer.zero_grad()
-            x_recon, _ = model(x_batch)
+            x_recon, _ = model(x_noisy)
             loss = criterion(x_recon, x_batch)
             loss.backward()
             optimizer.step()

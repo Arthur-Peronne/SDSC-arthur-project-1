@@ -134,6 +134,7 @@ class AutoEncoder3D_Current(nn.Module):
         flattened_size = 64 * 4 * 16 * 16  # 65536
 
         self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(p=dropout_rate)
         self.fc_enc = nn.Linear(flattened_size, latent_dim)
 
         # Decoder
@@ -160,11 +161,13 @@ class AutoEncoder3D_Current(nn.Module):
         x = self.bottleneck_conv(x)   # -> (B, 64, 4, 16, 16)
 
         x = self.flatten(x)           # -> (B, 65536)
+        x = self.dropout(x)
         z = self.fc_enc(x)            # -> (B, latent_dim)
         return z
 
     def decode(self, z):
         x = self.fc_dec(z)            # -> (B, 65536)
+        x = self.dropout(x)
         x = x.view(-1, *self.feature_shape)
 
         x = self.dec1(x)              # -> (B, 32, 8, 32, 32)
@@ -188,7 +191,7 @@ class AutoEncoder3D_FCDeep(nn.Module):
     then flatten -> latent vector -> linear decode.
     """
 
-    def __init__(self, latent_dim=20, input_shape=(1, 32, 128, 128)):
+    def __init__(self, latent_dim=20, input_shape=(1, 32, 128, 128), dropout_rate=0.0):
         super().__init__()
 
         self.latent_dim = latent_dim
@@ -221,6 +224,7 @@ class AutoEncoder3D_FCDeep(nn.Module):
         flattened_size = 128 * 1 * 4 * 4  # 2048
 
         self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(p=dropout_rate)   # ← nouveau
         self.fc_enc = nn.Linear(flattened_size, latent_dim)
 
         # Decoder
@@ -249,11 +253,13 @@ class AutoEncoder3D_FCDeep(nn.Module):
         x = self.bottleneck_conv(x)
         x = self.final_down(x)
         x = self.flatten(x)
+        x = self.dropout(x)
         z = self.fc_enc(x)
         return z
 
     def decode(self, z):
         x = self.fc_dec(z)
+        x = self.dropout(x)  
         x = x.view(-1, *self.feature_shape)
         x = self.initial_up(x)
         x = self.dec1(x)
@@ -432,15 +438,15 @@ class AutoEncoder3D_Linear(nn.Module):
         x_recon = self.decode(z)
         return x_recon, z
 
-def build_autoencoder(model_name, latent_dimensions):
+def build_autoencoder(model_name, latent_dimensions, dropout_rate=0.0):
     """
     Build one of the available AE models.
     """
     if model_name == "AE3dCurrent":
-        return AutoEncoder3D_Current(latent_dim=latent_dimensions)
+        return AutoEncoder3D_Current(latent_dim=latent_dimensions, dropout_rate=dropout_rate)
 
     elif model_name == "AE3dFCDeep":
-        return AutoEncoder3D_FCDeep(latent_dim=latent_dimensions)
+        return AutoEncoder3D_FCDeep(latent_dim=latent_dimensions, dropout_rate=dropout_rate)
 
     elif model_name == "AE3dConv":
         return AutoEncoder3D_Conv(latent_dim=latent_dimensions)

@@ -9,28 +9,31 @@ from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
 
 # ── User choices : DATA ───────────────────────────────────────────────────────
-use_both_frames = False
+use_both_frames = True
 n_development = 120
 n_validation = 20
 splitname = "split0"
 recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
-model_name = "AE3dConv"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
+model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
 latent_dimensions = 200
-multiple_modelsanddims = True 
+multiple_modelsanddims = False 
 models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
 latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
-recalculateAE = False
+recalculateAE = True
 load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
-experiment_name = "baseline"    # "baseline" or other
+experiment_name = "noise_0.005"    # "baseline" or other
 n_epochs = 500                  # maximum epochs (early stopping will likely trigger before), baseline 500
-patience = 20                   # baseline: 20
-patience_scheduler = 8         # baseline : 8
 batch_size = 1                  # baseline: 1
-lr = 1e-5                      # baseline: 1e-5, 1e-6 for Linear
+patience = 40                   # baseline: 40 (before 20)
+patience_scheduler = None       # baseline : None (before 8, by default patience//5)
+lr = 1e-5                       # baseline: 1e-5, 1e-6 for Linear
+weight_decay = 0.0              # ← 0.0 / 1e-5 / 1e-4
+dropout_rate = 0.0              # ← 0.0 / 0.1 / 0.2
+noise_std = 0.005                 # ← 0.0 / 0.05 / 0.1
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
 plot_reconstruction = False 
@@ -66,6 +69,9 @@ if not multiple_modelsanddims:
         lr=lr,
         patience=patience,
         patience_scheduler=patience_scheduler,
+        weight_decay=weight_decay,
+        dropout_rate=dropout_rate,
+        noise_std=noise_std,
         recalculateAE=recalculateAE,
         load_epoch=load_epoch,
         experiment_name=experiment_name,
@@ -127,6 +133,9 @@ else:
                 lr=lr,
                 patience=patience,
                 patience_scheduler=patience_scheduler,
+                weight_decay=weight_decay,
+                dropout_rate=dropout_rate,
+                noise_std=noise_std,
                 recalculateAE=recalculateAE,
                 load_epoch=load_epoch,
                 experiment_name=experiment_name,
