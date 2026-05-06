@@ -41,7 +41,7 @@ max_pc_calc = 300
 recalculatePCA = False
 
 # ── User choices : RECONSTRUCTION METRICS ────────────────────────────────────
-compute_metrics = False
+compute_metrics = True
 latdim_list_pca = list(range(1, 200))  # 1 to 99 or 1 to 199
 
 # ── User choices : STANDALONE PLOTS ──────────────────────────────────────────
@@ -54,7 +54,7 @@ pc_n1, pc_n2 = 0, 1                # PC indices for 2D plots
 eigenvectors_toplot = 10
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────── 
-plot_reconstruction    = True      # set True to reconstruct and plot selected patients
+plot_reconstruction    = False      # set True to reconstruct and plot selected patients
 latent_dim_plot = 120         # latent dim to use for reconstruction
 recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
 patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
@@ -99,6 +99,20 @@ else:
     X_val   = X[n_train:n_development]
     X_test  = X[n_development:]
 
+# Calculate means (to reconstruct images later) and center X_train, X_val, X_test by row (same as done during pca_patients)
+if not maskbin:
+    row_means_train = X_train.mean(axis=1, keepdims=True)
+    row_means_val   = X_val.mean(axis=1,  keepdims=True)   # before centering
+    row_means_test  = X_test.mean(axis=1, keepdims=True)
+    X_train -= row_means_train
+    X_val  -= row_means_val
+    X_test -= row_means_test
+else:
+    row_means_train = np.zeros((X_train.shape[0], 1))
+    row_means_val  = np.zeros((X_val.shape[0],  1))
+    row_means_test = np.zeros((X_test.shape[0], 1))
+
+
 # ── PCA training (on train set only) ─────────────────────────────────────────
 pca_name = f"PCA_{n_train_images}patients_{splitname}_{frame_tag}"
 
@@ -106,19 +120,14 @@ pca, X_train_pca, meta = pcs.pca_patients(
     X_train,
     pca_folder,
     pca_name,
-    normalize_rows=not maskbin,
+    normalize_rows=False, # No need to center, already centered for security before
     recalculatePCA=recalculatePCA,
     max_pc_calc=max_pc_calc,
 )
 
 # Project val and test into PCA space
-# Apply same per-patient centering as during training if normalize_rows=True
-if not maskbin:
-    X_val_pca  = pca.transform(X_val  - X_val.mean(axis=1,  keepdims=True))
-    X_test_pca = pca.transform(X_test - X_test.mean(axis=1, keepdims=True))
-else:
-    X_val_pca  = pca.transform(X_val)
-    X_test_pca = pca.transform(X_test)
+X_val_pca  = pca.transform(X_val)
+X_test_pca = pca.transform(X_test)
 
 # ── Reconstruction metrics ────────────────────────────────────────────────────
 if compute_metrics:

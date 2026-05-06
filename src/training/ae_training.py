@@ -432,8 +432,8 @@ def ae_training_early_stopping(
     n_epochs=300,
     batch_size=1,
     lr=1e-3,
-    patience=20,
-    patience_scheduler=8,      
+    patience=40,
+    patience_scheduler=None,      
     recalculateAE=True,
     load_epoch=None,
     experiment_name="baseline",  
@@ -490,21 +490,35 @@ def ae_training_early_stopping(
  
     # ── Load existing model ───────────────────────────────────────────────────
     if not recalculateAE:
+        # Auto-detect .pth if load_epoch not specified
         if load_epoch is None:
-            raise ValueError(
-                "load_epoch must be specified when recalculateAE=False. "
-                "Example: load_epoch=42 loads '_best_42epochs.pth'."
-            )
- 
-        best_path = output_dir / f"_best_{load_epoch}epochs.pth"
-        if not best_path.exists():
-            raise FileNotFoundError(f"Model file not found: {best_path}")
- 
+            pth_files = sorted(output_dir.glob("_best_*epochs.pth"))
+            if len(pth_files) == 0:
+                raise FileNotFoundError(
+                    f"No '_best_*epochs.pth' file found in: {output_dir}\n"
+                    f"Train the model first (recalculateAE=True) or specify load_epoch."
+                )
+            if len(pth_files) > 1:
+                import warnings
+                warnings.warn(
+                    f"Multiple .pth files found in {output_dir}, loading the most recent: "
+                    f"{pth_files[-1].name}. Set load_epoch explicitly to suppress this warning.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            best_path = pth_files[-1]  # le plus récent (tri alphabétique = tri numérique ici)
+            # Extraire l'epoch depuis le nom de fichier
+            load_epoch = int(best_path.stem.replace("_best_", "").replace("epochs", ""))
+        else:
+            best_path = output_dir / f"_best_{load_epoch}epochs.pth"
+            if not best_path.exists():
+                raise FileNotFoundError(f"Model file not found: {best_path}")
+
         print(f"Loading existing best model: {best_path}")
         model = build_autoencoder(model_name, latent_dimensions).to(device)
         model.load_state_dict(torch.load(best_path, map_location=device))
         model.eval()
- 
+
         loss_history = {"train": [], "validation": []}
         loss_path = output_dir / f"_best_{load_epoch}epochs_loss.txt"
         if loss_path.exists():
@@ -517,7 +531,7 @@ def ae_training_early_stopping(
                         val_val = float(parts[1].strip())
                         loss_history["train"].append(train_val)
                         loss_history["validation"].append(val_val)
- 
+
         return model, load_epoch, loss_history
  
     # ── Training ─────────────────────────────────────────────────────────────
@@ -529,7 +543,10 @@ def ae_training_early_stopping(
         shuffle=True,
         pin_memory=(device.type == "cuda")
     )
- 
+    
+    if patience_scheduler is None:
+        patience_scheduler = int(patience/5)
+
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(

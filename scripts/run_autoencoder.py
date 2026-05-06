@@ -9,20 +9,22 @@ from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
 
 # ── User choices : DATA ───────────────────────────────────────────────────────
-use_both_frames = True
+use_both_frames = False
 n_development = 120
 n_validation = 20
 splitname = "split0"
 recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
-multiple_modelsanddims = False 
-model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 120  # Among [4, 8, 12, 20, 28, 40, 60, 80, 100] 
+model_name = "AE3dConv"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
+latent_dimensions = 200
+multiple_modelsanddims = True 
+models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
 recalculateAE = False
-load_epoch = 71               # required if recalculateAE=False, e.g. load_epoch=42
+load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
 experiment_name = "baseline"    # "baseline" or other
 n_epochs = 500                  # maximum epochs (early stopping will likely trigger before), baseline 500
 patience = 20                   # baseline: 20
@@ -31,7 +33,7 @@ batch_size = 1                  # baseline: 1
 lr = 1e-5                      # baseline: 1e-5, 1e-6 for Linear
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
-plot_reconstruction = True 
+plot_reconstruction = False 
 recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct
 patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
 
@@ -69,12 +71,13 @@ if not multiple_modelsanddims:
         experiment_name=experiment_name,
     )
         # ── Plot train / validation loss curves ───────────────────────────────────────
-    aep.plot_train_val_loss(
-        loss_history=loss_history,
-        best_epoch=best_epoch,
-        simulation_name=simulation_name,
-        experiment_name=experiment_name,
-    )
+    if recalculateAE:
+        aep.plot_train_val_loss(
+            loss_history=loss_history,
+            best_epoch=best_epoch,
+            simulation_name=simulation_name,
+            experiment_name=experiment_name,
+        )
 
     # ── Compute R² on train and validation sets ───────────────────────────────────
     for metrics_dataset in ["train", "validation", "test"]:
@@ -109,8 +112,8 @@ if not multiple_modelsanddims:
             experiment_name=experiment_name,
         )
 else:
-    for latent_dimensions in [200]:  # [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200]:
-        for model_name in ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]:
+    for latent_dimensions in latdim_list: 
+        for model_name in models_list:
             simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
 
             model, best_epoch, loss_history = aet.ae_training_early_stopping(
@@ -129,12 +132,13 @@ else:
                 experiment_name=experiment_name,
             )
         # ── Plot train / validation loss curves ───────────────────────────────────────
-            aep.plot_train_val_loss(
-                loss_history=loss_history,
-                best_epoch=best_epoch,
-                simulation_name=simulation_name,
-                experiment_name=experiment_name,
-            )
+            if recalculateAE:
+                aep.plot_train_val_loss(
+                    loss_history=loss_history,
+                    best_epoch=best_epoch,
+                    simulation_name=simulation_name,
+                    experiment_name=experiment_name,
+                )
 
             # ── Compute R² on train and validation sets ───────────────────────────────────
             for metrics_dataset in ["train", "validation", "test"]:
