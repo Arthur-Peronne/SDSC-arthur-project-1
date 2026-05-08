@@ -15,6 +15,9 @@ from src.config import TEMPODATA_FOLDER
 from src.training import ae_optuna as aeo 
 
 # ── User choices ──────────────────────────────────────────────────────────────
+
+replot_only = True   # True = only load and plot / False = run the optuna optimization
+
 N_TRIALS        = 40
 MODEL_NAME      = "AE3dFCDeep"
 LATENT_DIM      = 120          # for example
@@ -44,4 +47,11 @@ if __name__ == "__main__":
         "study_name":      STUDY_NAME,
         "db_path":         DB_PATH,
     }
-    study = aeo.run_optuna(config)
+
+    if replot_only:
+        aeo.load_and_plot(config)
+    else:
+        study = aeo.run_optuna(config)
+        aeo.plot_optuna_results(study, config["db_path"])
+
+    # study = aeo.run_optuna(config)

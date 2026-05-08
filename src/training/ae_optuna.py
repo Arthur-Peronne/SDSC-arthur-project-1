@@ -8,6 +8,9 @@ the study can be interrupted and resumed at any time.
 """
 
 import optuna
+import optuna.trial as optuna_trial
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from pathlib import Path
 from src.config import TEMPODATA_FOLDER
 from src.training import ae_training as aet
@@ -83,19 +86,29 @@ def run_optuna(config: dict) -> optuna.Study:
         load_if_exists=True,
     )
 
-    study.enqueue_trial({
-        "lr":           1e-5,
-        "weight_decay": 0.0,
-        "dropout_rate": 0.0,
-        "noise_std":    0.0,
-        "patience":     40,
-    })
+    if len(study.trials) == 0:
+        study.enqueue_trial({
+            "lr":           1e-5,
+            "weight_decay": 1e-7,
+            "dropout_rate": 0.0,
+            "noise_std":    0.0,
+            "patience":     40,
+        })
+
+    # Check how many trials have been done
+    n_done = len([t for t in study.trials 
+              if t.state == optuna_trial.TrialState.COMPLETE])
+    n_remaining = max(0, config["n_trials"] - n_done)
+    
+    print(f"Trials déjà complétés : {n_done} / {config['n_trials']}")
+    print(f"Trials restants : {n_remaining}")
 
     # functools.partial to give config to objective
     import functools
     obj_with_config = functools.partial(objective, config=config)
 
-    study.optimize(obj_with_config, n_trials=config["n_trials"], show_progress_bar=True)
+    if n_remaining > 0:
+        study.optimize(obj_with_config, n_trials=n_remaining, show_progress_bar=True)
 
     save_optuna_results(study, config["db_path"])
 
@@ -153,3 +166,122 @@ def save_optuna_results(study: optuna.Study, db_path: Path) -> None:
         f.write("\n".join(lines))
 
     print(f"Results saved to {output_path}")
+
+
+def load_and_plot(config: dict) -> None:
+    """
+    Load an existing Optuna study from SQLite and plot results.
+    Use this to regenerate plots without rerunning the optimization.
+    """
+    study = optuna.load_study(
+        study_name=config["study_name"],
+        storage=f"sqlite:///{config['db_path']}",
+    )
+    plot_optuna_results(study, config["db_path"])
+
+
+def plot_optuna_results(study: optuna.Study, db_path: Path) -> None:
+    """
+    Plot optimization history and hyperparameter evolution across trials.
+    Saves two figures in the same folder as the SQLite DB.
+    """
+
+    completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    completed.sort(key=lambda t: t.number)
+
+    trial_nums = [t.number for t in completed]
+    val_losses = [t.value for t in completed]
+    best_idx   = val_losses.index(min(val_losses))
+    best_trial = trial_nums[best_idx]
+
+    # ── Best so far curve ─────────────────────────────────────────
+    best_so_far = []
+    running_min = float("inf")
+    for v in val_losses:
+        running_min = min(running_min, v)
+        best_so_far.append(running_min)
+
+    output_dir = db_path.parent
+
+    # ══════════════════════════════════════════════════════════════
+    # Plot 1 — Optimization history
+    # ══════════════════════════════════════════════════════════════
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    ax.plot(trial_nums, val_losses,
+            color="#B4B2A9", linewidth=1, marker="o", markersize=3,
+            label="Val loss")
+    # ax.plot(trial_nums, best_so_far,
+    #         color="#534AB7", linewidth=2, drawstyle="steps-post",
+    #         label="Best so far")
+    ax.axvline(x=best_trial, color="#E24B4A", linewidth=1.2,
+               linestyle="--", label=f"Best trial ({best_trial})")
+    ax.scatter([best_trial], [min(val_losses)],
+               color="#E24B4A", s=60, zorder=5)
+
+    ax.set_xlabel("Trial number")
+    ax.set_ylabel("Val loss")
+    ax.set_title(f"Optuna — optimization history\n{study.study_name}")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    sorted_losses = sorted(val_losses, reverse=True)
+    ax.set_ylim(bottom=min(val_losses) * 0.95, top=sorted_losses[1]*1.02)
+
+    fig.tight_layout()
+    fig.savefig(output_dir / f"{study.study_name}_history.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved: {output_dir / f'{study.study_name}_history.png'}")
+
+   
+    # ══════════════════════════════════════════════════════════════
+    # Plot 2 — One subplot per hyperparameter
+    # ══════════════════════════════════════════════════════════════
+    hp_config = {
+        "lr":           ("#534AB7", "lr"),
+        "weight_decay": ("#1D9E75", "weight decay"),
+        "dropout_rate": ("#D85A30", "dropout"),
+        "noise_std":    ("#BA7517", "noise"),
+        "patience":     ("#378ADD", "patience"),
+    }
+
+    n_hp = len(hp_config)
+    fig, axes = plt.subplots(n_hp, 1, figsize=(10, 3 * n_hp), sharex=True)
+
+    # Val loss normalized
+    vl_min, vl_max = min(val_losses), max(val_losses)
+    vl_norm = [(v - vl_min) / (vl_max - vl_min) for v in val_losses]
+
+    for ax, (hp_name, (color, label)) in zip(axes, hp_config.items()):
+
+        # Val loss in background
+        ax_vl = ax.twinx()
+        ax_vl.plot(trial_nums, val_losses,
+                   color="#B4B2A9", linewidth=0.8, linestyle="--", alpha=0.5)
+        sorted_losses = sorted(val_losses, reverse=True)
+        ax_vl.set_ylim(bottom=min(val_losses) * 0.95, top=sorted_losses[1]*1.02)
+        ax_vl.set_ylabel("val loss", fontsize=8, color="#B4B2A9")
+        ax_vl.tick_params(axis="y", labelcolor="#B4B2A9", labelsize=7)
+
+        # Hyperparameter
+        values = [t.params.get(hp_name) for t in completed]
+        ax.plot(trial_nums, values,
+                color=color, linewidth=1.5, marker="o", markersize=3)
+        ax.axvline(x=best_trial, color="#E24B4A", linewidth=1.2, linestyle="--")
+        ax.set_ylabel(label, fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+        # Scientific notation and log scale
+        if hp_name in ("lr", "weight_decay"):
+            ax.yaxis.set_major_formatter(
+                plt.matplotlib.ticker.ScalarFormatter(useMathText=True)
+            )
+            ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+            ax.set_yscale("log")
+
+    axes[-1].set_xlabel("Trial number")
+    fig.suptitle(f"Optuna — hyperparameter evolution\n{study.study_name}", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(output_dir / f"{study.study_name}_hyperparams.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved: {output_dir / f'{study.study_name}_hyperparams.png'}")

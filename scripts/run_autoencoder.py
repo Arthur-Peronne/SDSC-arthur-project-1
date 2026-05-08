@@ -17,23 +17,23 @@ recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
 model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 200
+latent_dimensions = 120
 multiple_modelsanddims = False 
 models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
 latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
-recalculateAE = True
+recalculateAE = False
 load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
-experiment_name = "noise_0.005"    # "baseline" or other
-n_epochs = 500                  # maximum epochs (early stopping will likely trigger before), baseline 500
+experiment_name = "optuna_AE3dFCDeep_regularisation_v1_trial35"    # "baseline" or other
+n_epochs = 200                  # maximum epochs (early stopping will likely trigger before), baseline 500
 batch_size = 1                  # baseline: 1
-patience = 40                   # baseline: 40 (before 20)
+patience = 45                   # baseline: 40 (before 20)
 patience_scheduler = None       # baseline : None (before 8, by default patience//5)
-lr = 1e-5                       # baseline: 1e-5, 1e-6 for Linear
-weight_decay = 0.0              # ← 0.0 / 1e-5 / 1e-4
-dropout_rate = 0.0              # ← 0.0 / 0.1 / 0.2
-noise_std = 0.005                 # ← 0.0 / 0.05 / 0.1
+lr = 4.24e-5                       # baseline: 1e-5, 1e-6 for Linear
+weight_decay = 6.47e-6              # ← 0.0 / 1e-5 / 1e-4
+dropout_rate = 0.221             # ← 0.0 / 0.1 / 0.2
+noise_std = 0.002                # ← 0.0 / 0.05 / 0.1
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
 plot_reconstruction = False 

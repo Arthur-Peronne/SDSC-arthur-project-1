@@ -1,0 +1,293 @@
+======================================================================
+PROJECT ARBORESCENCE WITH MODULE DESCRIPTIONS
+Root : /home/renku/work/SDSC-arthur-project-1
+======================================================================
+
+SDSC-arthur-project-1/
+├── ai_assistance/
+│   ├── context_arborescence.txt
+│   ├── context_code.txt
+│   └── dump_context.py
+├── archive_scripts/
+│   ├── run_pca_spatial_OLD.py  # Script for the functions for the PCA "each patient"
+│   ├── run_pca_vs_ae.py  # Script for the functions for the PCA  across each patient and compare the results with the autoencoder
+│   └── run_pca_vs_ae_OLD.py  # Script for the functions for the PCA  across each patient and compare the results with the autoencoder
+├── experiments/
+│   ├── pca_testiris.py  # Script to perform a simple PCA on the IRIS dataset
+│   ├── regression_testscikit.py
+│   └── test.py
+├── reports/
+│   └── test.txt
+├── scripts/
+│   ├── run_autoencoder.py  # Script for training and evaluating the 3D autoencoder on cardiac MRI data.
+│   ├── run_comparison_aepca.py  # Comparison plots between AE architectures and PCA.
+│   ├── run_imagetreatment.py  # Script to treat MRI images before analysis (PCA)
+│   ├── run_pca_spatial.py  # Spatial PCA across patients.
+│   ├── run_pca_temporal.py  # Scripts to perform PCA
+│   ├── run_registration.py  # Script to perform the image resampling and the following registration
+│   ├── run_registration_pipelinechecks.py  # Visual quality check of the preprocessing pipeline.
+│   ├── run_regression.py  # Script for the functions for the PCA "each patient" and followed by the logistic regression with patient metadata
+│   └── run_visualize.py  # Script to visualize MRI images
+├── sdsc_arthur_project.egg-info/
+│   ├── PKG-INFO
+│   ├── SOURCES.txt
+│   ├── dependency_links.txt
+│   └── top_level.txt
+├── src/
+│   ├── data/
+│   │   ├── __init__.py
+│   │   ├── geometry.py  # Geometry utilities for cardiac MRI preprocessing:
+│   │   ├── imagetreatment.py  # Basic MRI image treatment functions (cropping, resampling).
+│   │   ├── importdata.py  # Functions to import data
+│   │   ├── registration.py  # Rigid registration of cardiac MRI frames and Dice-based evaluation.
+│   │   └── resampling.py  # Functions defined for the image registration
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── ae_models.py  # 3D autoencoder architectures for cardiac MRI representation learning.
+│   │   ├── pca.py  # Functions to perform PCA — temporal and spatial utilities.
+│   │   ├── pca_spatial.py  # Script for the functions for the PCA "each patient"
+│   │   └── regression.py  # Data loading, split management, logistic and linear regression models
+│   ├── sdsc_arthur_project.egg-info/
+│   │   ├── PKG-INFO
+│   │   ├── SOURCES.txt
+│   │   ├── dependency_links.txt
+│   │   └── top_level.txt
+│   ├── training/
+│   │   ├── __init__.py
+│   │   └── ae_training.py  # Training, dataset preparation, and metrics aggregation for the 3D autoencoder.
+│   ├── visualization/
+│   │   ├── __init__.py
+│   │   ├── ae_plots.py  # Plotting and result parsing functions for the 3D autoencoder.
+│   │   ├── mri_plots.py  # Functions to visualize MRI images
+│   │   ├── plots.py  # Various plots, not direct MRI representations
+│   │   └── regression_plots.py  # Result parsing and plotting functions for logistic and linear regression
+│   ├── __init__.py
+│   └── config.py  # Central configuration — paths loaded from environment variables.
+├── README.md
+├── backup_X_vectors.tar.gz
+├── backup_autoencoder.tar.gz
+├── backup_cropped_frames.tar.gz
+├── backup_pca_allpatients_res.tar.gz
+├── backup_registered_frames.tar.gz
+├── backup_resampled_frames.tar.gz
+├── backup_results.tar.gz
+├── pyproject.toml
+├── requirements-OLD.txt
+├── requirements.txt
+└── requirements_locked.txt
+
+======================================================================
+DETAILED DOCSTRINGS PER FILE
+======================================================================
+
+# archive_scripts/run_pca_spatial_OLD.py
+"""
+Script for the functions for the PCA "each patient"
+"""
+
+# archive_scripts/run_pca_vs_ae.py
+"""
+Script for the functions for the PCA  across each patient and compare the results with the autoencoder
+Reasons to have a new script: need same inputs and same outputs as AE pipeline
+"""
+
+# archive_scripts/run_pca_vs_ae_OLD.py
+"""
+Script for the functions for the PCA  across each patient and compare the results with the autoencoder
+Reasons to have a new script: need same inputs and same outputs as AE pipeline
+"""
+
+# experiments/pca_testiris.py
+"""
+Script to perform a simple PCA on the IRIS dataset
+"""
+
+# experiments/regression_testscikit.py
+"""
+(no module docstring)
+"""
+
+# experiments/test.py
+"""
+(no module docstring)
+"""
+
+# scripts/run_autoencoder.py
+"""
+Script for training and evaluating the 3D autoencoder on cardiac MRI data.
+Uses early stopping based on validation loss.
+"""
+
+# scripts/run_comparison_aepca.py
+"""
+Comparison plots between AE architectures and PCA.
+ 
+Plot 1 — AE vs AE (validation set):
+    Compare AE architectures against each other.
+    Use this plot to select the best AE architecture and latent dim.
+ 
+Plot 2 — AE vs PCA (test set, informative only):
+    Compare best AE architectures against PCA.
+    Do NOT use this plot to select the AE model — use Plot 1 for that.
+ 
+Plot 3 — AE n_patients comparison:
+    Compare AE architectures trained on different numbers of patients.
+    Helps assess the effect of data augmentation (e.g. ED vs ED+ES).
+"""
+
+# scripts/run_imagetreatment.py
+"""
+Script to treat MRI images before analysis (PCA)
+"""
+
+# scripts/run_pca_spatial.py
+"""
+Spatial PCA across patients.
+
+Two use cases:
+  1. Standalone PCA study: explained variance, eigenvectors, metadata correlations.
+  2. AE comparison: reconstruction metrics (R2, MSE...) on train / val / test sets,
+     using the same splits as run_autoencoder.py for a fair comparison.
+
+Supports ED only, ES only, or ED+ES combined datasets.
+All output files include a frame tag (ED / ES / ED+ES) to avoid overwriting.
+"""
+
+# scripts/run_pca_temporal.py
+"""
+Scripts to perform PCA
+"""
+
+# scripts/run_registration.py
+"""
+Script to perform the image resampling and the following registration
+"""
+
+# scripts/run_registration_pipelinechecks.py
+"""
+Visual quality check of the preprocessing pipeline.
+
+For a selection of patients, plots images and masks at each step:
+  1. Resampled (full image)
+  2. Cropped (around cardiac centroid)
+  3. Registered (aligned to reference)
+
+Also computes Dice scores before/after registration, separately for ED and ES frames.
+
+Run this script after any change to resampling, cropping, or registration
+to verify the pipeline produces correct outputs.
+"""
+
+# scripts/run_regression.py
+"""
+Script for the functions for the PCA "each patient" and followed by the logistic regression with patient metadata
+"""
+
+# scripts/run_visualize.py
+"""
+Script to visualize MRI images
+"""
+
+# src/__init__.py
+"""
+(no module docstring)
+"""
+
+# src/config.py
+"""
+Central configuration — paths loaded from environment variables.
+"""
+
+# src/data/__init__.py
+"""
+(no module docstring)
+"""
+
+# src/data/geometry.py
+"""
+Geometry utilities for cardiac MRI preprocessing:
+centroid computation, bounding boxes, cropping and padding.
+No dependency on SimpleITK.
+"""
+
+# src/data/imagetreatment.py
+"""
+Basic MRI image treatment functions (cropping, resampling).
+"""
+
+# src/data/importdata.py
+"""
+Functions to import data
+"""
+
+# src/data/registration.py
+"""
+Rigid registration of cardiac MRI frames and Dice-based evaluation.
+"""
+
+# src/data/resampling.py
+"""
+Functions defined for the image registration
+"""
+
+# src/models/__init__.py
+"""
+(no module docstring)
+"""
+
+# src/models/ae_models.py
+"""
+3D autoencoder architectures for cardiac MRI representation learning.
+"""
+
+# src/models/pca.py
+"""
+Functions to perform PCA — temporal and spatial utilities.
+"""
+
+# src/models/pca_spatial.py
+"""
+Script for the functions for the PCA "each patient"
+"""
+
+# src/models/regression.py
+"""
+Data loading, split management, logistic and linear regression models
+for PCA-based cardiac group classification and metadata prediction.
+"""
+
+# src/training/__init__.py
+"""
+(no module docstring)
+"""
+
+# src/training/ae_training.py
+"""
+Training, dataset preparation, and metrics aggregation for the 3D autoencoder.
+"""
+
+# src/visualization/__init__.py
+"""
+(no module docstring)
+"""
+
+# src/visualization/ae_plots.py
+"""
+Plotting and result parsing functions for the 3D autoencoder.
+"""
+
+# src/visualization/mri_plots.py
+"""
+Functions to visualize MRI images
+"""
+
+# src/visualization/plots.py
+"""
+Various plots, not direct MRI representations
+"""
+
+# src/visualization/regression_plots.py
+"""
+Result parsing and plotting functions for logistic and linear regression
+on PCA-based cardiac representations.
+"""
