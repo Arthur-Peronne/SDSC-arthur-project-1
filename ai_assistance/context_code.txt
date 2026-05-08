@@ -1,7 +1,7 @@
 ======================================================================
 FULL PROJECT CODE — ALL .py FILES
 Root : /home/renku/work/SDSC-arthur-project-1
-Files: 35
+Files: 37
 ======================================================================
 
 
@@ -454,6 +454,69 @@ plt.savefig(RESULTS_FOLDER / "testregression.png")
 
 
 ######################################################################
+# FILE: scripts/run_ae_hyperparam.py
+######################################################################
+
+# scripts/run_ae_hyperparam.py
+"""
+Optuna hyperparameter optimisation for AE3dFCDeep.
+
+Each trial trains AE3dFCDeep with early stopping and returns
+the best validation loss. Results are persisted in SQLite so
+the study can be interrupted and resumed at any time.
+
+Usage:
+    python scripts/run_ae_hyperparam.py
+"""
+
+import optuna
+from src.config import TEMPODATA_FOLDER
+from src.training import ae_optuna as aeo 
+
+# ── User choices ──────────────────────────────────────────────────────────────
+
+replot_only = True   # True = only load and plot / False = run the optuna optimization
+
+N_TRIALS        = 40
+MODEL_NAME      = "AE3dFCDeep"
+LATENT_DIM      = 120          # for example
+N_EPOCHS        = 500
+BATCH_SIZE      = 1
+SPLITNAME       = "split0"
+USE_BOTH_FRAMES = True
+N_DEVELOPMENT   = 120
+N_VALIDATION    = 20
+STUDY_NAME      = "AE3dFCDeep_regularisation_v1"
+DB_PATH         = TEMPODATA_FOLDER / "optuna" / f"{STUDY_NAME}.db"
+
+# Reduce noise in the logs
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+if __name__ == "__main__":
+    config = {
+        "n_trials":        N_TRIALS,
+        "model_name":      MODEL_NAME,
+        "latent_dim":      LATENT_DIM,
+        "n_epochs":        N_EPOCHS,
+        "batch_size":      BATCH_SIZE,
+        "splitname":       SPLITNAME,
+        "use_both_frames": USE_BOTH_FRAMES,
+        "n_development":   N_DEVELOPMENT,
+        "n_validation":    N_VALIDATION,
+        "study_name":      STUDY_NAME,
+        "db_path":         DB_PATH,
+    }
+
+    if replot_only:
+        aeo.load_and_plot(config)
+    else:
+        study = aeo.run_optuna(config)
+        aeo.plot_optuna_results(study, config["db_path"])
+
+    # study = aeo.run_optuna(config)
+
+
+######################################################################
 # FILE: scripts/run_autoencoder.py
 ######################################################################
 
@@ -475,22 +538,27 @@ splitname = "split0"
 recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
-multiple_modelsanddims = False 
 model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 120  # Among [4, 8, 12, 20, 28, 40, 60, 80, 100] 
+latent_dimensions = 120
+multiple_modelsanddims = False 
+models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
 recalculateAE = False
-load_epoch = 71               # required if recalculateAE=False, e.g. load_epoch=42
-experiment_name = "baseline"    # "baseline" or other
-n_epochs = 500                  # maximum epochs (early stopping will likely trigger before), baseline 500
-patience = 20                   # baseline: 20
-patience_scheduler = 8         # baseline : 8
+load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
+experiment_name = "optuna_AE3dFCDeep_regularisation_v1_trial35"    # "baseline" or other
+n_epochs = 200                  # maximum epochs (early stopping will likely trigger before), baseline 500
 batch_size = 1                  # baseline: 1
-lr = 1e-5                      # baseline: 1e-5, 1e-6 for Linear
+patience = 45                   # baseline: 40 (before 20)
+patience_scheduler = None       # baseline : None (before 8, by default patience//5)
+lr = 4.24e-5                       # baseline: 1e-5, 1e-6 for Linear
+weight_decay = 6.47e-6              # ← 0.0 / 1e-5 / 1e-4
+dropout_rate = 0.221             # ← 0.0 / 0.1 / 0.2
+noise_std = 0.002                # ← 0.0 / 0.05 / 0.1
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
-plot_reconstruction = True 
+plot_reconstruction = False 
 recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct
 patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
 
@@ -523,17 +591,21 @@ if not multiple_modelsanddims:
         lr=lr,
         patience=patience,
         patience_scheduler=patience_scheduler,
+        weight_decay=weight_decay,
+        dropout_rate=dropout_rate,
+        noise_std=noise_std,
         recalculateAE=recalculateAE,
         load_epoch=load_epoch,
         experiment_name=experiment_name,
     )
         # ── Plot train / validation loss curves ───────────────────────────────────────
-    aep.plot_train_val_loss(
-        loss_history=loss_history,
-        best_epoch=best_epoch,
-        simulation_name=simulation_name,
-        experiment_name=experiment_name,
-    )
+    if recalculateAE:
+        aep.plot_train_val_loss(
+            loss_history=loss_history,
+            best_epoch=best_epoch,
+            simulation_name=simulation_name,
+            experiment_name=experiment_name,
+        )
 
     # ── Compute R² on train and validation sets ───────────────────────────────────
     for metrics_dataset in ["train", "validation", "test"]:
@@ -568,8 +640,8 @@ if not multiple_modelsanddims:
             experiment_name=experiment_name,
         )
 else:
-    for latent_dimensions in [200]:  # [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200]:
-        for model_name in ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]:
+    for latent_dimensions in latdim_list: 
+        for model_name in models_list:
             simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
 
             model, best_epoch, loss_history = aet.ae_training_early_stopping(
@@ -583,17 +655,21 @@ else:
                 lr=lr,
                 patience=patience,
                 patience_scheduler=patience_scheduler,
+                weight_decay=weight_decay,
+                dropout_rate=dropout_rate,
+                noise_std=noise_std,
                 recalculateAE=recalculateAE,
                 load_epoch=load_epoch,
                 experiment_name=experiment_name,
             )
         # ── Plot train / validation loss curves ───────────────────────────────────────
-            aep.plot_train_val_loss(
-                loss_history=loss_history,
-                best_epoch=best_epoch,
-                simulation_name=simulation_name,
-                experiment_name=experiment_name,
-            )
+            if recalculateAE:
+                aep.plot_train_val_loss(
+                    loss_history=loss_history,
+                    best_epoch=best_epoch,
+                    simulation_name=simulation_name,
+                    experiment_name=experiment_name,
+                )
 
             # ── Compute R² on train and validation sets ───────────────────────────────────
             for metrics_dataset in ["train", "validation", "test"]:
@@ -1022,7 +1098,7 @@ max_pc_calc = 300
 recalculatePCA = False
 
 # ── User choices : RECONSTRUCTION METRICS ────────────────────────────────────
-compute_metrics = False
+compute_metrics = True
 latdim_list_pca = list(range(1, 200))  # 1 to 99 or 1 to 199
 
 # ── User choices : STANDALONE PLOTS ──────────────────────────────────────────
@@ -1035,7 +1111,7 @@ pc_n1, pc_n2 = 0, 1                # PC indices for 2D plots
 eigenvectors_toplot = 10
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────── 
-plot_reconstruction    = True      # set True to reconstruct and plot selected patients
+plot_reconstruction    = False      # set True to reconstruct and plot selected patients
 latent_dim_plot = 120         # latent dim to use for reconstruction
 recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
 patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
@@ -1080,6 +1156,20 @@ else:
     X_val   = X[n_train:n_development]
     X_test  = X[n_development:]
 
+# Calculate means (to reconstruct images later) and center X_train, X_val, X_test by row (same as done during pca_patients)
+if not maskbin:
+    row_means_train = X_train.mean(axis=1, keepdims=True)
+    row_means_val   = X_val.mean(axis=1,  keepdims=True)   # before centering
+    row_means_test  = X_test.mean(axis=1, keepdims=True)
+    X_train -= row_means_train
+    X_val  -= row_means_val
+    X_test -= row_means_test
+else:
+    row_means_train = np.zeros((X_train.shape[0], 1))
+    row_means_val  = np.zeros((X_val.shape[0],  1))
+    row_means_test = np.zeros((X_test.shape[0], 1))
+
+
 # ── PCA training (on train set only) ─────────────────────────────────────────
 pca_name = f"PCA_{n_train_images}patients_{splitname}_{frame_tag}"
 
@@ -1087,19 +1177,14 @@ pca, X_train_pca, meta = pcs.pca_patients(
     X_train,
     pca_folder,
     pca_name,
-    normalize_rows=not maskbin,
+    normalize_rows=False, # No need to center, already centered for security before
     recalculatePCA=recalculatePCA,
     max_pc_calc=max_pc_calc,
 )
 
 # Project val and test into PCA space
-# Apply same per-patient centering as during training if normalize_rows=True
-if not maskbin:
-    X_val_pca  = pca.transform(X_val  - X_val.mean(axis=1,  keepdims=True))
-    X_test_pca = pca.transform(X_test - X_test.mean(axis=1, keepdims=True))
-else:
-    X_val_pca  = pca.transform(X_val)
-    X_test_pca = pca.transform(X_test)
+X_val_pca  = pca.transform(X_val)
+X_test_pca = pca.transform(X_test)
 
 # ── Reconstruction metrics ────────────────────────────────────────────────────
 if compute_metrics:
@@ -3162,6 +3247,7 @@ class AutoEncoder3D_Current(nn.Module):
         flattened_size = 64 * 4 * 16 * 16  # 65536
 
         self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(p=dropout_rate)
         self.fc_enc = nn.Linear(flattened_size, latent_dim)
 
         # Decoder
@@ -3188,11 +3274,13 @@ class AutoEncoder3D_Current(nn.Module):
         x = self.bottleneck_conv(x)   # -> (B, 64, 4, 16, 16)
 
         x = self.flatten(x)           # -> (B, 65536)
+        x = self.dropout(x)
         z = self.fc_enc(x)            # -> (B, latent_dim)
         return z
 
     def decode(self, z):
         x = self.fc_dec(z)            # -> (B, 65536)
+        x = self.dropout(x)
         x = x.view(-1, *self.feature_shape)
 
         x = self.dec1(x)              # -> (B, 32, 8, 32, 32)
@@ -3216,7 +3304,7 @@ class AutoEncoder3D_FCDeep(nn.Module):
     then flatten -> latent vector -> linear decode.
     """
 
-    def __init__(self, latent_dim=20, input_shape=(1, 32, 128, 128)):
+    def __init__(self, latent_dim=20, input_shape=(1, 32, 128, 128), dropout_rate=0.0):
         super().__init__()
 
         self.latent_dim = latent_dim
@@ -3249,6 +3337,7 @@ class AutoEncoder3D_FCDeep(nn.Module):
         flattened_size = 128 * 1 * 4 * 4  # 2048
 
         self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(p=dropout_rate)   # ← nouveau
         self.fc_enc = nn.Linear(flattened_size, latent_dim)
 
         # Decoder
@@ -3277,11 +3366,13 @@ class AutoEncoder3D_FCDeep(nn.Module):
         x = self.bottleneck_conv(x)
         x = self.final_down(x)
         x = self.flatten(x)
+        x = self.dropout(x)
         z = self.fc_enc(x)
         return z
 
     def decode(self, z):
         x = self.fc_dec(z)
+        x = self.dropout(x)  
         x = x.view(-1, *self.feature_shape)
         x = self.initial_up(x)
         x = self.dec1(x)
@@ -3460,15 +3551,15 @@ class AutoEncoder3D_Linear(nn.Module):
         x_recon = self.decode(z)
         return x_recon, z
 
-def build_autoencoder(model_name, latent_dimensions):
+def build_autoencoder(model_name, latent_dimensions, dropout_rate=0.0):
     """
     Build one of the available AE models.
     """
     if model_name == "AE3dCurrent":
-        return AutoEncoder3D_Current(latent_dim=latent_dimensions)
+        return AutoEncoder3D_Current(latent_dim=latent_dimensions, dropout_rate=dropout_rate)
 
     elif model_name == "AE3dFCDeep":
-        return AutoEncoder3D_FCDeep(latent_dim=latent_dimensions)
+        return AutoEncoder3D_FCDeep(latent_dim=latent_dimensions, dropout_rate=dropout_rate)
 
     elif model_name == "AE3dConv":
         return AutoEncoder3D_Conv(latent_dim=latent_dimensions)
@@ -4395,6 +4486,299 @@ def linear_predictions_results(pca, reg, X_test_pca, Y_test, pca_description, pc
 
 
 ######################################################################
+# FILE: src/training/ae_optuna.py
+######################################################################
+
+# src/training/ae_optuna.py
+"""
+Functions for ptuna hyperparameter optimisation for AE3dFCDeep used in run_ae_hyperparam.py
+
+Each trial trains AE3dFCDeep with early stopping and returns
+the best validation loss. Results are persisted in SQLite so
+the study can be interrupted and resumed at any time.
+"""
+
+import optuna
+import optuna.trial as optuna_trial
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from pathlib import Path
+from src.config import TEMPODATA_FOLDER
+from src.training import ae_training as aet
+
+
+def objective(trial: optuna.Trial, config: dict) -> float:
+
+    lr           = trial.suggest_float("lr",           1e-6, 1e-4, log=True)
+    weight_decay = trial.suggest_float("weight_decay", 1e-7, 1e-3, log=True)
+    dropout_rate = trial.suggest_float("dropout_rate", 0.0,  0.3)
+    noise_std    = trial.suggest_float("noise_std",    0.0,  0.005)
+    patience     = trial.suggest_int(  "patience",     20,   80)
+
+    n_train_images = (
+        (config["n_development"] - config["n_validation"])
+        * (2 if config["use_both_frames"] else 1)
+    )
+    simulation_name = (
+        f"{config['model_name']}_{n_train_images}patients"
+        f"_{config['splitname']}_{config['latent_dim']}dims"
+    )
+    experiment_name = f"optuna_{config['study_name']}_trial{trial.number}"
+
+    train_dataset, validation_dataset, _, _ = aet.ae_getdataset(
+        n_patients=config["n_development"],
+        validation=True,
+        n_validation=config["n_validation"],
+        imagesource="registered_frames",
+        use_both_frames=config["use_both_frames"],
+        recalculateXvector=False,
+    )
+
+    try:
+        _, best_epoch, loss_history = aet.ae_training_early_stopping(
+            train_dataset=train_dataset,
+            validation_dataset=validation_dataset,
+            simulation_name=simulation_name,
+            model_name=config["model_name"],
+            latent_dimensions=config["latent_dim"],
+            n_epochs=config["n_epochs"],
+            batch_size=config["batch_size"],
+            lr=lr,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            noise_std=noise_std,
+            patience=patience,
+            patience_scheduler=None,
+            recalculateAE=True,
+            experiment_name=experiment_name,
+        )
+    except Exception as e:
+        print(f"Trial {trial.number} failed: {e}")
+        raise optuna.exceptions.TrialPruned()
+
+    best_val_loss = min(loss_history["validation"])
+    print(
+        f"Trial {trial.number:>3} | val_loss={best_val_loss:.6f} | "
+        f"epoch={best_epoch:>4} | lr={lr:.2e} | wd={weight_decay:.2e} | "
+        f"drop={dropout_rate:.2f} | noise={noise_std:.3f} | patience={patience}"
+    )
+    trial.set_user_attr("best_epoch", best_epoch)
+    return best_val_loss
+
+
+def run_optuna(config: dict) -> optuna.Study:
+
+    config["db_path"].parent.mkdir(parents=True, exist_ok=True)
+
+    study = optuna.create_study(
+        direction="minimize",
+        study_name=config["study_name"],
+        storage=f"sqlite:///{config['db_path']}",
+        load_if_exists=True,
+    )
+
+    if len(study.trials) == 0:
+        study.enqueue_trial({
+            "lr":           1e-5,
+            "weight_decay": 1e-7,
+            "dropout_rate": 0.0,
+            "noise_std":    0.0,
+            "patience":     40,
+        })
+
+    # Check how many trials have been done
+    n_done = len([t for t in study.trials 
+              if t.state == optuna_trial.TrialState.COMPLETE])
+    n_remaining = max(0, config["n_trials"] - n_done)
+    
+    print(f"Trials déjà complétés : {n_done} / {config['n_trials']}")
+    print(f"Trials restants : {n_remaining}")
+
+    # functools.partial to give config to objective
+    import functools
+    obj_with_config = functools.partial(objective, config=config)
+
+    if n_remaining > 0:
+        study.optimize(obj_with_config, n_trials=n_remaining, show_progress_bar=True)
+
+    save_optuna_results(study, config["db_path"])
+
+    return study
+
+def save_optuna_results(study: optuna.Study, db_path: Path) -> None:
+    """
+    Save a human-readable summary of the Optuna study to a .txt file.
+    """
+    output_path = db_path.parent / f"{study.study_name}_results.txt"
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append(f"Optuna Study : {study.study_name}")
+    lines.append(f"Trials completed : {len(study.trials)}")
+    lines.append(f"Best val loss    : {study.best_value:.6f}")
+    lines.append("")
+    lines.append("Best hyperparameters :")
+    for k, v in study.best_params.items():
+        lines.append(f"  {k:>15} = {v}")
+    lines.append("")
+
+    # Hyperparameter importance
+    try:
+        importance = optuna.importance.get_param_importances(study)
+        lines.append("Hyperparameter importance :")
+        for k, v in importance.items():
+            bar = "█" * int(v * 30)
+            lines.append(f"  {k:>15} : {v:.3f}  {bar}")
+        lines.append("")
+    except Exception:
+        lines.append("(importance non disponible — trop peu de trials)")
+        lines.append("")
+
+    # All trials table
+    lines.append(f"{'Trial':>6} {'Val loss':>12} {'lr':>10} {'wd':>10} "
+                 f"{'dropout':>8} {'noise':>8} {'patience':>9} {'epoch':>6}")
+    lines.append("-" * 75)
+    for t in sorted(study.trials, key=lambda t: t.value or float("inf")):
+        if t.value is None:
+            continue
+        p = t.params
+        lines.append(
+            f"{t.number:>6} {t.value:>12.6f} "
+            f"{p.get('lr', 0):>10.2e} "
+            f"{p.get('weight_decay', 0):>10.2e} "
+            f"{p.get('dropout_rate', 0):>8.2f} "
+            f"{p.get('noise_std', 0):>8.3f} "
+            f"{p.get('patience', 0):>9} "
+            f"{t.user_attrs.get('best_epoch', '?'):>6}"
+        )
+    lines.append("=" * 60)
+
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
+
+    print(f"Results saved to {output_path}")
+
+
+def load_and_plot(config: dict) -> None:
+    """
+    Load an existing Optuna study from SQLite and plot results.
+    Use this to regenerate plots without rerunning the optimization.
+    """
+    study = optuna.load_study(
+        study_name=config["study_name"],
+        storage=f"sqlite:///{config['db_path']}",
+    )
+    plot_optuna_results(study, config["db_path"])
+
+
+def plot_optuna_results(study: optuna.Study, db_path: Path) -> None:
+    """
+    Plot optimization history and hyperparameter evolution across trials.
+    Saves two figures in the same folder as the SQLite DB.
+    """
+
+    completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    completed.sort(key=lambda t: t.number)
+
+    trial_nums = [t.number for t in completed]
+    val_losses = [t.value for t in completed]
+    best_idx   = val_losses.index(min(val_losses))
+    best_trial = trial_nums[best_idx]
+
+    # ── Best so far curve ─────────────────────────────────────────
+    best_so_far = []
+    running_min = float("inf")
+    for v in val_losses:
+        running_min = min(running_min, v)
+        best_so_far.append(running_min)
+
+    output_dir = db_path.parent
+
+    # ══════════════════════════════════════════════════════════════
+    # Plot 1 — Optimization history
+    # ══════════════════════════════════════════════════════════════
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    ax.plot(trial_nums, val_losses,
+            color="#B4B2A9", linewidth=1, marker="o", markersize=3,
+            label="Val loss")
+    # ax.plot(trial_nums, best_so_far,
+    #         color="#534AB7", linewidth=2, drawstyle="steps-post",
+    #         label="Best so far")
+    ax.axvline(x=best_trial, color="#E24B4A", linewidth=1.2,
+               linestyle="--", label=f"Best trial ({best_trial})")
+    ax.scatter([best_trial], [min(val_losses)],
+               color="#E24B4A", s=60, zorder=5)
+
+    ax.set_xlabel("Trial number")
+    ax.set_ylabel("Val loss")
+    ax.set_title(f"Optuna — optimization history\n{study.study_name}")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    sorted_losses = sorted(val_losses, reverse=True)
+    ax.set_ylim(bottom=min(val_losses) * 0.95, top=sorted_losses[1]*1.02)
+
+    fig.tight_layout()
+    fig.savefig(output_dir / f"{study.study_name}_history.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved: {output_dir / f'{study.study_name}_history.png'}")
+
+   
+    # ══════════════════════════════════════════════════════════════
+    # Plot 2 — One subplot per hyperparameter
+    # ══════════════════════════════════════════════════════════════
+    hp_config = {
+        "lr":           ("#534AB7", "lr"),
+        "weight_decay": ("#1D9E75", "weight decay"),
+        "dropout_rate": ("#D85A30", "dropout"),
+        "noise_std":    ("#BA7517", "noise"),
+        "patience":     ("#378ADD", "patience"),
+    }
+
+    n_hp = len(hp_config)
+    fig, axes = plt.subplots(n_hp, 1, figsize=(10, 3 * n_hp), sharex=True)
+
+    # Val loss normalized
+    vl_min, vl_max = min(val_losses), max(val_losses)
+    vl_norm = [(v - vl_min) / (vl_max - vl_min) for v in val_losses]
+
+    for ax, (hp_name, (color, label)) in zip(axes, hp_config.items()):
+
+        # Val loss in background
+        ax_vl = ax.twinx()
+        ax_vl.plot(trial_nums, val_losses,
+                   color="#B4B2A9", linewidth=0.8, linestyle="--", alpha=0.5)
+        sorted_losses = sorted(val_losses, reverse=True)
+        ax_vl.set_ylim(bottom=min(val_losses) * 0.95, top=sorted_losses[1]*1.02)
+        ax_vl.set_ylabel("val loss", fontsize=8, color="#B4B2A9")
+        ax_vl.tick_params(axis="y", labelcolor="#B4B2A9", labelsize=7)
+
+        # Hyperparameter
+        values = [t.params.get(hp_name) for t in completed]
+        ax.plot(trial_nums, values,
+                color=color, linewidth=1.5, marker="o", markersize=3)
+        ax.axvline(x=best_trial, color="#E24B4A", linewidth=1.2, linestyle="--")
+        ax.set_ylabel(label, fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+        # Scientific notation and log scale
+        if hp_name in ("lr", "weight_decay"):
+            ax.yaxis.set_major_formatter(
+                plt.matplotlib.ticker.ScalarFormatter(useMathText=True)
+            )
+            ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+            ax.set_yscale("log")
+
+    axes[-1].set_xlabel("Trial number")
+    fig.suptitle(f"Optuna — hyperparameter evolution\n{study.study_name}", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(output_dir / f"{study.study_name}_hyperparams.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved: {output_dir / f'{study.study_name}_hyperparams.png'}")
+
+
+######################################################################
 # FILE: src/training/ae_training.py
 ######################################################################
 
@@ -4574,6 +4958,7 @@ def ae_training(
     recalculateAE=True,
     batch_size=1,
     lr=1e-3,
+    dropout_rate=0.0,           
     checkpoint_epochs=None
 ):
     """
@@ -4608,7 +4993,7 @@ def ae_training(
 
     if recalculateAE:
 
-        model = build_autoencoder(model_name, latent_dimensions).to(device)
+        model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
 
         loader = DataLoader(
             dataset,
@@ -4832,8 +5217,11 @@ def ae_training_early_stopping(
     n_epochs=300,
     batch_size=1,
     lr=1e-3,
-    patience=20,
-    patience_scheduler=8,      
+    patience=40,
+    patience_scheduler=None,  
+    weight_decay=0.0,           # L2 regularisation
+    dropout_rate=0.0,           
+    noise_std=0.0,              # denoising AE    
     recalculateAE=True,
     load_epoch=None,
     experiment_name="baseline",  
@@ -4860,8 +5248,21 @@ def ae_training_early_stopping(
         Maximum number of training epochs.
     batch_size : int
     lr : float
+    weight_decay : float
+        L2 regularisation coefficient passed to Adam optimizer.
+        0.0 = no regularisation (baseline). Try 1e-5, 1e-4.
+    dropout_rate : float
+        Dropout probability applied on FC layers of AE3dFCDeep (and others ????)
+        0.0 = no dropout (baseline). Try 0.1, 0.2.
+        Automatically disabled during validation (model.eval()).
+    noise_std : float
+        Std of Gaussian noise added to input during training only (denoising AE).
+        0.0 = no noise (baseline). Try 0.05, 0.1.
+        Loss is always computed against the clean input x, not the noisy x̃.
     patience : int
-        Number of epochs without validation improvement before stopping.
+        Epochs without val improvement before early stopping. Default 40.
+    patience_scheduler : int or None
+        Patience for ReduceLROnPlateau. If None, set to patience // 5.
     recalculateAE : bool
         If False, load an existing best model instead of training.
     load_epoch : int or None
@@ -4883,28 +5284,45 @@ def ae_training_early_stopping(
     {simulation_name}/_best_{best_epoch}epochs.pth
     {simulation_name}/_best_{best_epoch}epochs_loss.txt
     """
+
+    if patience_scheduler is None:
+        patience_scheduler = patience // 5
+
     device = get_device()
     output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name / experiment_name
-    # output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name
     output_dir.mkdir(parents=True, exist_ok=True)
  
     # ── Load existing model ───────────────────────────────────────────────────
     if not recalculateAE:
+        # Auto-detect .pth if load_epoch not specified
         if load_epoch is None:
-            raise ValueError(
-                "load_epoch must be specified when recalculateAE=False. "
-                "Example: load_epoch=42 loads '_best_42epochs.pth'."
-            )
- 
-        best_path = output_dir / f"_best_{load_epoch}epochs.pth"
-        if not best_path.exists():
-            raise FileNotFoundError(f"Model file not found: {best_path}")
- 
+            pth_files = sorted(output_dir.glob("_best_*epochs.pth"))
+            if len(pth_files) == 0:
+                raise FileNotFoundError(
+                    f"No '_best_*epochs.pth' file found in: {output_dir}\n"
+                    f"Train the model first (recalculateAE=True) or specify load_epoch."
+                )
+            if len(pth_files) > 1:
+                import warnings
+                warnings.warn(
+                    f"Multiple .pth files found in {output_dir}, loading the most recent: "
+                    f"{pth_files[-1].name}. Set load_epoch explicitly to suppress this warning.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            best_path = pth_files[-1]  # le plus récent (tri alphabétique = tri numérique ici)
+            # Extraire l'epoch depuis le nom de fichier
+            load_epoch = int(best_path.stem.replace("_best_", "").replace("epochs", ""))
+        else:
+            best_path = output_dir / f"_best_{load_epoch}epochs.pth"
+            if not best_path.exists():
+                raise FileNotFoundError(f"Model file not found: {best_path}")
+
         print(f"Loading existing best model: {best_path}")
         model = build_autoencoder(model_name, latent_dimensions).to(device)
         model.load_state_dict(torch.load(best_path, map_location=device))
         model.eval()
- 
+
         loss_history = {"train": [], "validation": []}
         loss_path = output_dir / f"_best_{load_epoch}epochs_loss.txt"
         if loss_path.exists():
@@ -4917,11 +5335,11 @@ def ae_training_early_stopping(
                         val_val = float(parts[1].strip())
                         loss_history["train"].append(train_val)
                         loss_history["validation"].append(val_val)
- 
+
         return model, load_epoch, loss_history
  
     # ── Training ─────────────────────────────────────────────────────────────
-    model = build_autoencoder(model_name, latent_dimensions).to(device)
+    model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
  
     train_loader = DataLoader(
         train_dataset,
@@ -4929,9 +5347,12 @@ def ae_training_early_stopping(
         shuffle=True,
         pin_memory=(device.type == "cuda")
     )
- 
+
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(
+        model.parameters(), 
+        lr=lr, 
+        weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode="min",
@@ -4959,8 +5380,16 @@ def ae_training_early_stopping(
  
         for (x_batch,) in train_loader:
             x_batch = x_batch.to(device, non_blocking=(device.type == "cuda"))
+
+            # Add noise if asked 
+            if noise_std > 0.0:
+                x_noisy = x_batch + torch.randn_like(x_batch) * noise_std
+                x_noisy = torch.clamp(x_noisy, 0.0, 1.0)  # keep in [0,1]
+            else:
+                x_noisy = x_batch
+
             optimizer.zero_grad()
-            x_recon, _ = model(x_batch)
+            x_recon, _ = model(x_noisy)
             loss = criterion(x_recon, x_batch)
             loss.backward()
             optimizer.step()

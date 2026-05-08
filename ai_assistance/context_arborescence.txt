@@ -19,6 +19,7 @@ SDSC-arthur-project-1/
 ├── reports/
 │   └── test.txt
 ├── scripts/
+│   ├── run_ae_hyperparam.py  # Optuna hyperparameter optimisation for AE3dFCDeep.
 │   ├── run_autoencoder.py  # Script for training and evaluating the 3D autoencoder on cardiac MRI data.
 │   ├── run_comparison_aepca.py  # Comparison plots between AE architectures and PCA.
 │   ├── run_imagetreatment.py  # Script to treat MRI images before analysis (PCA)
@@ -54,6 +55,7 @@ SDSC-arthur-project-1/
 │   │   └── top_level.txt
 │   ├── training/
 │   │   ├── __init__.py
+│   │   ├── ae_optuna.py  # Functions for ptuna hyperparameter optimisation for AE3dFCDeep used in run_ae_hyperparam.py
 │   │   └── ae_training.py  # Training, dataset preparation, and metrics aggregation for the 3D autoencoder.
 │   ├── visualization/
 │   │   ├── __init__.py
@@ -64,13 +66,6 @@ SDSC-arthur-project-1/
 │   ├── __init__.py
 │   └── config.py  # Central configuration — paths loaded from environment variables.
 ├── README.md
-├── backup_X_vectors.tar.gz
-├── backup_autoencoder.tar.gz
-├── backup_cropped_frames.tar.gz
-├── backup_pca_allpatients_res.tar.gz
-├── backup_registered_frames.tar.gz
-├── backup_resampled_frames.tar.gz
-├── backup_results.tar.gz
 ├── pyproject.toml
 ├── requirements-OLD.txt
 ├── requirements.txt
@@ -110,6 +105,18 @@ Script to perform a simple PCA on the IRIS dataset
 # experiments/test.py
 """
 (no module docstring)
+"""
+
+# scripts/run_ae_hyperparam.py
+"""
+Optuna hyperparameter optimisation for AE3dFCDeep.
+
+Each trial trains AE3dFCDeep with early stopping and returns
+the best validation loss. Results are persisted in SQLite so
+the study can be interrupted and resumed at any time.
+
+Usage:
+    python scripts/run_ae_hyperparam.py
 """
 
 # scripts/run_autoencoder.py
@@ -259,6 +266,15 @@ for PCA-based cardiac group classification and metadata prediction.
 # src/training/__init__.py
 """
 (no module docstring)
+"""
+
+# src/training/ae_optuna.py
+"""
+Functions for ptuna hyperparameter optimisation for AE3dFCDeep used in run_ae_hyperparam.py
+
+Each trial trains AE3dFCDeep with early stopping and returns
+the best validation loss. Results are persisted in SQLite so
+the study can be interrupted and resumed at any time.
 """
 
 # src/training/ae_training.py
