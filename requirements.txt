@@ -23,6 +23,8 @@ pillow
 pyparsing
 python-dateutil
 python-dotenv
+dotenv
+pyyaml
 requests
 scikit-learn
 scipy
@@ -31,6 +33,13 @@ six
 sympy
 threadpoolctl
 torch
+tqdm
 typing_extensions
 urllib3
+optuna
+sqlalchemy
+alembic
+awscli
+simpleitk
+colorlog
 -e .
