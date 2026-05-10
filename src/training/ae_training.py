@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from pathlib import Path
 
 from src.config import TEMPODATA_FOLDER, RESULTS_FOLDER
 from src.models import pca_spatial as pcs
@@ -165,7 +166,7 @@ def dataset_for_metrics(metrics_dataset, train_dataset, validation_dataset, test
     return dataset, patient_offset
 
 
-def ae_training(
+def ae_training_old(
     dataset,
     simulation_name,
     model_name,
@@ -273,6 +274,151 @@ def ae_training(
 
     return model
 
+
+def ae_training(
+    train_dataset,
+    simulation_name,
+    model_name,
+    latent_dimensions,
+    n_epochs=75,
+    batch_size=1,
+    lr=1e-5,
+    weight_decay=0.0,
+    dropout_rate=0.0,
+    noise_std=0.0,
+    recalculateAE=True,
+    experiment_name="optuna",
+):
+    """
+    Train the 3D autoencoder for a fixed number of epochs (no early stopping).
+    Used when training on the full dataset (no validation set available).
+
+    Parameters
+    ----------
+    train_dataset : TensorDataset
+    simulation_name : str
+        e.g. "AE3dFCDeep_240patients_split0_120dims"
+    model_name : str
+    latent_dimensions : int
+    n_epochs : int
+        Fixed number of training epochs. Default 75.
+    batch_size : int
+    lr : float
+    weight_decay : float
+        L2 regularisation coefficient. Default 0.0.
+    dropout_rate : float
+        Dropout probability on FC layers. Default 0.0.
+    noise_std : float
+        Std of Gaussian noise for denoising AE. Default 0.0.
+    recalculateAE : bool
+        If False, load existing model instead of training.
+    experiment_name : str
+        Subfolder name, e.g. "optuna_allpatients".
+
+    Returns
+    -------
+    model : nn.Module
+        Trained model in eval mode.
+    n_epochs : int
+        Number of epochs trained (fixed, returned for consistency with
+        ae_training_early_stopping interface).
+    loss_history : dict
+        {"train": [float, ...]} — one value per epoch.
+
+    Saved files
+    -----------
+    tempodata/autoencoder/{simulation_name}/{experiment_name}/_best_{n_epochs}epochs.pth
+    tempodata/autoencoder/{simulation_name}/{experiment_name}/_best_{n_epochs}epochs_loss.txt
+    """
+    device = get_device()
+    output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name / experiment_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    final_path = output_dir / f"_best_{n_epochs}epochs.pth"
+    loss_path  = output_dir / f"_best_{n_epochs}epochs_loss.txt"
+
+    # ── Load existing model ───────────────────────────────────────────────────
+    if not recalculateAE:
+        if not final_path.exists():
+            raise FileNotFoundError(f"Model file not found: {final_path}")
+
+        print(f"Loading existing model: {final_path}")
+        model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
+        model.load_state_dict(torch.load(final_path, map_location=device))
+        model.eval()
+
+        loss_history = {"train": []}
+        if loss_path.exists():
+            with open(loss_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("train:"):
+                        loss_history["train"].append(float(line.replace("train:", "").strip()))
+
+        return model, n_epochs, loss_history
+
+    # ── Training ──────────────────────────────────────────────────────────────
+    model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=(device.type == "cuda"),
+    )
+
+    criterion  = nn.MSELoss()
+    optimizer  = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    loss_history = {"train": []}
+
+    print(
+        f"Training {model_name} | device={device} | "
+        f"batch_size={batch_size} | n_epochs={n_epochs} | lr={lr:.2e} | "
+        f"weight_decay={weight_decay:.2e} | dropout={dropout_rate:.2f} | "
+        f"noise_std={noise_std:.4f}"
+    )
+
+    for epoch in range(n_epochs):
+        model.train()
+        epoch_train_loss = 0.0
+
+        for (x_batch,) in train_loader:
+            x_batch = x_batch.to(device, non_blocking=(device.type == "cuda"))
+
+            # Denoising AE
+            if noise_std > 0.0:
+                x_noisy = x_batch + torch.randn_like(x_batch) * noise_std
+                x_noisy = torch.clamp(x_noisy, 0.0, 1.0)
+            else:
+                x_noisy = x_batch
+
+            optimizer.zero_grad()
+            x_recon, _ = model(x_noisy)
+            loss = criterion(x_recon, x_batch)   # target = clean image
+            loss.backward()
+            optimizer.step()
+            epoch_train_loss += loss.item()
+
+        avg_train_loss = epoch_train_loss / len(train_loader)
+        loss_history["train"].append(avg_train_loss)
+
+        print(
+            f"Epoch {epoch + 1}/{n_epochs} | train: {avg_train_loss:.6f} | lr: {lr:.2e}"
+        )
+
+    # ── Save model ────────────────────────────────────────────────────────────
+    torch.save(model.state_dict(), final_path)
+    print(f"Model saved: {final_path}")
+
+    # ── Save loss history ─────────────────────────────────────────────────────
+    with open(loss_path, "w") as f:
+        f.write(f"n_epochs: {n_epochs}\n\n")
+        for tl in loss_history["train"]:
+            f.write(f"train: {tl}\n")
+
+    model.eval()
+    return model, n_epochs, loss_history
 
 def ae_reconstructX(patient_tensor, X_maxnorm, model):
     """
@@ -668,3 +814,154 @@ def ae_training_early_stopping(
     model.eval()
  
     return model, best_epoch, loss_history
+
+
+def get_best_epochs_stats(
+    results_folder,
+    model_name,
+    n_patients_list,
+    splitname,
+    latdim_list,
+    experiment_name,
+):
+    """
+    Retrieve best_epoch stats across n_patients / latent_dims combinations
+    for a given model and experiment.
+
+    Returns a dict with keys (n_patients, latent_dim) → stats dict.
+    Stats: epochs list, mean, median, std, min, max.
+
+    Parameters
+    ----------
+    results_folder : Path
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    model_name : str
+        e.g. "AE3dFCDeep"
+    n_patients_list : list of int
+        e.g. [200] or [100, 200]
+    splitname : str
+        e.g. "split0"
+    latdim_list : list of int
+        e.g. [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200]
+    experiment_name : str
+        e.g. "optuna"
+
+    Returns
+    -------
+    dict : {(n_patients, latent_dim): {
+                "epochs": list,
+                "mean": float,
+                "median": float,
+                "std": float,
+                "min": int,
+                "max": int,
+            }}
+    """
+    import numpy as np
+    results_folder = Path(results_folder)
+    stats = {}
+
+    for n_patients in n_patients_list:
+        for latent_dim in latdim_list:
+            simulation_name = (
+                f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+            )
+            model_dir = results_folder / simulation_name / experiment_name
+
+            if not model_dir.exists():
+                continue
+
+            pth_files = sorted(
+                model_dir.glob("_best_*epochs.pth"),
+                key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+            )
+
+            if not pth_files:
+                continue
+
+            epochs = [
+                int(p.stem.replace("_best_", "").replace("epochs", ""))
+                for p in pth_files
+            ]
+
+            stats[(n_patients, latent_dim)] = {
+                "epochs": epochs,
+                "mean":   float(np.mean(epochs)),
+                "median": float(np.median(epochs)),
+                "std":    float(np.std(epochs)),
+                "min":    int(np.min(epochs)),
+                "max":    int(np.max(epochs)),
+            }
+
+    return stats
+
+def print_and_save_best_epochs_stats(
+    stats,
+    model_name,
+    experiment_name,
+    results_folder_save=None,
+):
+    """
+    Print and save best_epoch stats.
+    - Per row: one (n_patients, latent_dim) combination with its epoch(s)
+    - Aggregated stats at the bottom across all dims for each n_patients group.
+
+    Parameters
+    ----------
+    stats : dict
+        Output of get_best_epochs_stats.
+    model_name : str
+    experiment_name : str
+    results_folder_save : Path or None
+        If None, uses RESULTS_FOLDER.
+    """
+    import numpy as np
+    from src.config import RESULTS_FOLDER
+
+    results_folder_save = Path(results_folder_save) if results_folder_save else RESULTS_FOLDER
+
+    lines = []
+    lines.append(f"Best epoch stats — {model_name} | {experiment_name}")
+    lines.append("=" * 60)
+    lines.append(f"{'n_patients':>12} {'latent_dim':>12} {'epochs':>20}")
+    lines.append("-" * 46)
+
+    # Group by n_patients for aggregated stats
+    from collections import defaultdict
+    epochs_by_npatients = defaultdict(list)
+
+    for (n_patients, latent_dim), s in sorted(stats.items()):
+        lines.append(
+            f"{n_patients:>12} {latent_dim:>12} {str(s['epochs']):>20}"
+        )
+        epochs_by_npatients[n_patients].extend(s["epochs"])
+
+    # Aggregated stats per n_patients group
+    lines.append("")
+    lines.append("Aggregated stats across all latent dims")
+    lines.append("-" * 60)
+    lines.append(
+        f"{'n_patients':>12} {'mean':>8} {'median':>8} "
+        f"{'std':>8} {'min':>6} {'max':>6}"
+    )
+    lines.append("-" * 52)
+
+    for n_patients, all_epochs in sorted(epochs_by_npatients.items()):
+        lines.append(
+            f"{n_patients:>12} "
+            f"{np.mean(all_epochs):>8.1f} {np.median(all_epochs):>8.1f} "
+            f"{np.std(all_epochs):>8.1f} {int(np.min(all_epochs)):>6} "
+            f"{int(np.max(all_epochs)):>6}"
+        )
+
+    lines.append("=" * 60)
+
+    # Print
+    for line in lines:
+        print(line)
+
+    # Save
+    save_path = results_folder_save / f"best_epochs_stats_{model_name}_{experiment_name}.txt"
+    with open(save_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"\nSaved: {save_path}")

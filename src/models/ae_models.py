@@ -117,7 +117,7 @@ class AutoEncoder3D_Current(nn.Module):
     -> flatten 65536 -> latent_dim
     """
 
-    def __init__(self, latent_dim=10, input_shape=(1, 32, 128, 128)):
+    def __init__(self, latent_dim=10, input_shape=(1, 32, 128, 128), dropout_rate=0.0):
         super().__init__()
 
         self.latent_dim = latent_dim

@@ -11,29 +11,31 @@ from src.visualization import ae_plots as aep
 # ── User choices : DATA ───────────────────────────────────────────────────────
 use_both_frames = True
 n_development = 120
-n_validation = 20
+n_validation = 0
 splitname = "split0"
 recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
 model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 120
-multiple_modelsanddims = False 
-models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
-latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
+latent_dimensions = 200
+multiple_modelsanddims = True 
+# models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+# latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
+models_list = ["AE3dFCDeep"]
+latdim_list = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 80, 100, 130, 160, 200, 240] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
-recalculateAE = False
-load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
-experiment_name = "optuna_AE3dFCDeep_regularisation_v1_trial35"    # "baseline" or other
-n_epochs = 200                  # maximum epochs (early stopping will likely trigger before), baseline 500
-batch_size = 1                  # baseline: 1
-patience = 45                   # baseline: 40 (before 20)
-patience_scheduler = None       # baseline : None (before 8, by default patience//5)
-lr = 4.24e-5                       # baseline: 1e-5, 1e-6 for Linear
-weight_decay = 6.47e-6              # ← 0.0 / 1e-5 / 1e-4
-dropout_rate = 0.221             # ← 0.0 / 0.1 / 0.2
-noise_std = 0.002                # ← 0.0 / 0.05 / 0.1
+recalculateAE = True
+load_epoch = None                       # required if a specific model result among the model/experiment_name has to be loaded
+experiment_name = "optuna"  # "baseline" or other
+n_epochs = 75                               # maximum epochs (early stopping will likely trigger before), baseline 300
+batch_size = 1                              # baseline: 1
+patience = 45                                # baseline: 40, optuna: 45
+patience_scheduler = None    # baseline : None (before 8, by default patience//5)
+lr = 4.24e-5                                     # baseline: 1e-5 (1e-6 for Linear), optuna: 4.24e-5
+weight_decay = 6.47e-6              # baseline: 0.0, optuna: 6.47e-6
+dropout_rate = 0.221                 # baseline: 0.0, optuna: 0.221 (NB: NO DROPOUT for AE3dConv nor AE3dLinear)
+noise_std = 0.002                        # baseline: 0.0, optuna 0.002
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
 plot_reconstruction = False 
@@ -44,11 +46,10 @@ patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual ch
 n_train_effective = n_development - n_validation
 n_train_images = n_train_effective * 2 if use_both_frames else n_train_effective
 n_val_images = n_validation * 2 if use_both_frames else n_validation
-# n_test_images = (150-n_development) * 2 if use_both_frames else (150-n_development) 
 
 train_dataset, validation_dataset, test_dataset, X_maxnorm = aet.ae_getdataset(
     n_patients=n_development,
-    validation=True,
+    validation=(n_validation > 0),
     n_validation=n_validation,
     imagesource="registered_frames", 
     use_both_frames=use_both_frames,
@@ -58,24 +59,41 @@ train_dataset, validation_dataset, test_dataset, X_maxnorm = aet.ae_getdataset(
 # ── Train (or reload) ─────────────────────────────────────────────────────────
 if not multiple_modelsanddims:
     simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
-    model, best_epoch, loss_history = aet.ae_training_early_stopping(
-        train_dataset=train_dataset,
-        validation_dataset=validation_dataset,
-        simulation_name=simulation_name,
-        model_name=model_name,
-        latent_dimensions=latent_dimensions,
-        n_epochs=n_epochs,
-        batch_size=batch_size,
-        lr=lr,
-        patience=patience,
-        patience_scheduler=patience_scheduler,
-        weight_decay=weight_decay,
-        dropout_rate=dropout_rate,
-        noise_std=noise_std,
-        recalculateAE=recalculateAE,
-        load_epoch=load_epoch,
-        experiment_name=experiment_name,
-    )
+    
+    if n_validation == 0:
+        model, best_epoch, loss_history = aet.ae_training(
+            train_dataset=train_dataset,
+            simulation_name=simulation_name,
+            model_name=model_name,
+            latent_dimensions=latent_dimensions,
+            n_epochs=n_epochs,
+            batch_size=batch_size,
+            lr=lr,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            noise_std=noise_std,
+            recalculateAE=recalculateAE,
+            experiment_name=experiment_name,
+        )
+    else:
+        model, best_epoch, loss_history = aet.ae_training_early_stopping(
+            train_dataset=train_dataset,
+            validation_dataset=validation_dataset,
+            simulation_name=simulation_name,
+            model_name=model_name,
+            latent_dimensions=latent_dimensions,
+            n_epochs=n_epochs,
+            batch_size=batch_size,
+            lr=lr,
+            patience=patience,
+            patience_scheduler=patience_scheduler,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            noise_std=noise_std,
+            recalculateAE=recalculateAE,
+            load_epoch=load_epoch,
+            experiment_name=experiment_name,
+        )
         # ── Plot train / validation loss curves ───────────────────────────────────────
     if recalculateAE:
         aep.plot_train_val_loss(
@@ -86,7 +104,8 @@ if not multiple_modelsanddims:
         )
 
     # ── Compute R² on train and validation sets ───────────────────────────────────
-    for metrics_dataset in ["train", "validation", "test"]:
+    metrics_datasets = ["train", "test"] if n_validation == 0 else ["train", "validation", "test"]
+    for metrics_dataset in metrics_datasets:
         dataset_for_eval, patient_offset = aet.dataset_for_metrics(
             metrics_dataset,
             train_dataset,
@@ -122,24 +141,40 @@ else:
         for model_name in models_list:
             simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
 
-            model, best_epoch, loss_history = aet.ae_training_early_stopping(
-                train_dataset=train_dataset,
-                validation_dataset=validation_dataset,
-                simulation_name=simulation_name,
-                model_name=model_name,
-                latent_dimensions=latent_dimensions,
-                n_epochs=n_epochs,
-                batch_size=batch_size,
-                lr=lr,
-                patience=patience,
-                patience_scheduler=patience_scheduler,
-                weight_decay=weight_decay,
-                dropout_rate=dropout_rate,
-                noise_std=noise_std,
-                recalculateAE=recalculateAE,
-                load_epoch=load_epoch,
-                experiment_name=experiment_name,
-            )
+            if n_validation == 0:
+                model, best_epoch, loss_history = aet.ae_training(
+                    train_dataset=train_dataset,
+                    simulation_name=simulation_name,
+                    model_name=model_name,
+                    latent_dimensions=latent_dimensions,
+                    n_epochs=n_epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                    dropout_rate=dropout_rate,
+                    noise_std=noise_std,
+                    recalculateAE=recalculateAE,
+                    experiment_name=experiment_name,
+                )
+            else:
+                model, best_epoch, loss_history = aet.ae_training_early_stopping(
+                    train_dataset=train_dataset,
+                    validation_dataset=validation_dataset,
+                    simulation_name=simulation_name,
+                    model_name=model_name,
+                    latent_dimensions=latent_dimensions,
+                    n_epochs=n_epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    patience=patience,
+                    patience_scheduler=patience_scheduler,
+                    weight_decay=weight_decay,
+                    dropout_rate=dropout_rate,
+                    noise_std=noise_std,
+                    recalculateAE=recalculateAE,
+                    load_epoch=load_epoch,
+                    experiment_name=experiment_name,
+                )
         # ── Plot train / validation loss curves ───────────────────────────────────────
             if recalculateAE:
                 aep.plot_train_val_loss(
@@ -150,7 +185,8 @@ else:
                 )
 
             # ── Compute R² on train and validation sets ───────────────────────────────────
-            for metrics_dataset in ["train", "validation", "test"]:
+            metrics_datasets = ["train", "test"] if n_validation == 0 else ["train", "validation", "test"]
+            for metrics_dataset in metrics_datasets:
                 dataset_for_eval, patient_offset = aet.dataset_for_metrics(
                     metrics_dataset,
                     train_dataset,

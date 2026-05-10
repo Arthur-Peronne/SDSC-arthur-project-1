@@ -1092,7 +1092,6 @@ def plot_train_val_loss(
         If None, saves as {RESULTS_FOLDER}/{simulation_name}_train_val_loss.png
     """
     train_losses = np.array(loss_history["train"], dtype=float)
-    val_losses = np.array(loss_history["validation"], dtype=float)
     epochs = np.arange(1, len(train_losses) + 1)
  
     if save_path is None:
@@ -1101,15 +1100,18 @@ def plot_train_val_loss(
     fig, ax = plt.subplots(figsize=(9, 5))
  
     ax.plot(epochs, train_losses, linewidth=1.5, label="Train loss")
-    ax.plot(epochs, val_losses, linewidth=1.5, label="Validation loss")
- 
-    ax.axvline(
-        x=best_epoch,
-        color="red",
-        linestyle="--",
-        linewidth=1.2,
-        label=f"Best epoch ({best_epoch})"
-    )
+
+    # Validation loss — optionnel
+    if "validation" in loss_history and len(loss_history["validation"]) > 0:
+        val_losses = np.array(loss_history["validation"], dtype=float)
+        ax.plot(epochs, val_losses, linewidth=1.5, label="Validation loss")
+        ax.axvline(
+            x=best_epoch,
+            color="red",
+            linestyle="--",
+            linewidth=1.2,
+            label=f"Best epoch ({best_epoch})",
+        )
  
     ax.set_yscale("log")
     ax.set_xlabel("Epoch")
@@ -1546,6 +1548,123 @@ def plot_ae_npatients_comparison(
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {save_path}")
+
+def plot_ae_experiment_comparison(
+    results_folder,
+    model_names,
+    experiment_names,
+    splitname,
+    n_patients,
+    latdim_list,
+    metrics_dataset="validation",
+    metric="R2",
+    xscale="log",
+    save_path=None,
+):
+    """
+    Compare AE architectures trained with different experiment setups
+    (e.g. baseline vs optuna hyperparameters).
+
+    Style encoding:
+      - Color     → architecture (orange=AE3dCurrent, green=AE3dFCDeep, blue=AE3dConv)
+      - Linestyle → experiment: dotted for first, solid for second
+      - Marker    → experiment: 'o' for first, 's' for second
+
+    Parameters
+    ----------
+    results_folder : Path or str
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    model_names : list of str
+        AE architectures to plot, e.g. ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"].
+    experiment_names : list of str
+        e.g. ["baseline", "optuna"] — must have exactly 2 elements.
+    splitname : str
+        e.g. "split0"
+    n_patients : int
+        Number of train patients, e.g. 200.
+    latdim_list : list of int
+        Latent dimensions to plot.
+    metrics_dataset : str
+        "train", "validation", or "test".
+    metric : str
+        Metric to plot. Default "R2".
+    xscale : str
+        "log" or "linear".
+    save_path : Path or str or None
+    """
+    results_folder = Path(results_folder)
+
+    color_map = {
+        "AE3dCurrent": "orange",
+        "AE3dFCDeep":  "green",
+        "AE3dConv":    "blue",
+        "AE3dLinear":  "purple",
+    }
+
+    linestyle_map = {exp: ls for exp, ls in zip(experiment_names, ["dotted", "solid"])}
+    marker_map    = {exp: m  for exp, m  in zip(experiment_names, ["o", "s"])}
+    linewidth_map = {exp: lw for exp, lw in zip(experiment_names, [1.5, 2.5])}
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    for model_name in model_names:
+        color = color_map.get(model_name, "gray")
+
+        for experiment_name in experiment_names:
+            values, dims = [], []
+
+            for latent_dim in latdim_list:
+                simulation_name = f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+                model_dir = results_folder / simulation_name / experiment_name
+                pth_files = sorted(
+                    model_dir.glob("_best_*epochs.pth"),
+                    key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+                ) if model_dir.exists() else []
+                if len(pth_files) == 0:
+                    continue
+                best_epoch = int(pth_files[-1].stem.replace("_best_", "").replace("epochs", ""))
+
+                m = _load_summarymetrics(
+                    results_folder, simulation_name, experiment_name, best_epoch, metrics_dataset
+                )
+                if m is not None and metric in m:
+                    values.append(m[metric])
+                    dims.append(latent_dim)
+
+            if dims:
+                ax.plot(
+                    dims, values,
+                    color=color,
+                    linewidth=linewidth_map[experiment_name],
+                    linestyle=linestyle_map[experiment_name],
+                    marker=marker_map[experiment_name],
+                    markersize=5,
+                    label=f"{model_name} ({experiment_name})",
+                )
+
+    ax.set_xlabel("Latent dimension")
+    ax.set_ylabel(metric)
+    ax.set_xscale(xscale)
+    ax.set_title(
+        f"AE comparison — baseline vs optuna | {metric} | {metrics_dataset} set\n"
+        f"{splitname} | {n_patients} patients"
+    )
+    ax.set_xticks(latdim_list)
+    ax.set_xticklabels([str(d) for d in latdim_list], rotation=45, fontsize=8)
+    ax.legend(ncol=2, fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+
+    if save_path is None:
+        exp_str = "_vs_".join(experiment_names)
+        save_path = RESULTS_FOLDER / (
+            f"AEexperiment_comparison_{metric}_{metrics_dataset}_{splitname}"
+            f"_{n_patients}patients_{exp_str}.png"
+        )
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {save_path}")
+
 
 def pca_plotcompare_selected(
     patients_torecons,

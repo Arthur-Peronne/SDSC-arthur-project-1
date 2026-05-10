@@ -16,19 +16,22 @@ Plot 3 — AE n_patients comparison:
 """
  
 from src.config import TEMPODATA_FOLDER, RESULTS_FOLDER
+from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
- 
+
 # ── User choices : WHICH PLOTS TO PRODUCE ────────────────────────────────────
-run_plot1_ae_comparison    = True   # AE vs AE, val set
-run_plot2_ae_vs_pca        = True   # AE vs PCA, test set (informative)
-run_plot3_npatients        = True   # AE 100 vs 200 patients comparison
- 
+run_plot1_ae_comparison        = True   # AE vs AE, val set
+run_plot2_ae_vs_pca                 = True   # AE vs PCA, test set (informative)
+run_plot3_npatients                 = False   # AE 100 vs 200 patients comparison
+run_plot4_hyper_comparison =  True # AE hyperparameter trainings comparison (optuna/baseline)
+run_stats_nepochs                      = True 
+
 # ── User choices : DATA ───────────────────────────────────────────────────────
 splitname = "split0"
  
 # ── User choices : AE (shared) ────────────────────────────────────────────────
 model_names    = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"] # ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
-experiment_name = "baseline"
+experiment_name = "optuna"
  
 # ── User choices : PLOT 1 & 2 (single n_patients study) ──────────────────────
 frame_tag      = "ED+ES"            # "ED" or "ED+ES"
@@ -97,3 +100,30 @@ if run_plot3_npatients:
         metric=metric,
         xscale=xscale,
     )
+
+# ── Plot 4 — AE hyperparameter trainings comparison ────────────────────────────────────────
+if run_plot4_hyper_comparison:
+    aep.plot_ae_experiment_comparison(
+        results_folder=TEMPODATA_FOLDER / "autoencoder",
+        model_names=model_names,
+        experiment_names=["baseline", "optuna"],
+        splitname=splitname,
+        n_patients=200,
+        latdim_list=latdim_list_ae,
+        metrics_dataset="validation",
+        metric=metric,
+        xscale=xscale,
+    )
+
+# Stats on n_epochs from ae_training early stopping 
+
+if run_stats_nepochs:
+    stats = aet.get_best_epochs_stats(
+        results_folder=TEMPODATA_FOLDER / "autoencoder",
+        model_name="AE3dFCDeep",
+        n_patients_list=[n_patients],
+        splitname=splitname,
+        latdim_list=latdim_list_ae,
+        experiment_name=experiment_name,
+    )
+    aet.print_and_save_best_epochs_stats(stats,     model_name = "AE3dFCDeep", experiment_name = experiment_name)
