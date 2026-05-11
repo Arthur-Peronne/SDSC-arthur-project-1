@@ -450,7 +450,113 @@ plt.savefig(RESULTS_FOLDER / "testregression.png")
 # FILE: experiments/test.py
 ######################################################################
 
+def ae_training_old(
+    dataset,
+    simulation_name,
+    model_name,
+    latent_dimensions,
+    n_epochs=10,
+    recalculateAE=True,
+    batch_size=1,
+    lr=1e-3,
+    dropout_rate=0.0,           
+    checkpoint_epochs=None
+):
+    """
+    Train or load the 3D autoencoder.
 
+    Naming:
+    - final model: {simulation_name}_{n_epochs}epochs.pth
+    - loss file:   {simulation_name}_{n_epochs}epochs_loss.txt
+
+    where simulation_name is now something like:
+    AE3dFCDeep_96patients_split0_20dims
+    """
+    device = get_device()
+
+    final_model_path = (
+        TEMPODATA_FOLDER
+        / "autoencoder/"
+        / simulation_name
+        / f"_{n_epochs}epochs.pth"
+    )
+
+    loss_path = (
+        TEMPODATA_FOLDER
+        / "autoencoder/"
+        / simulation_name
+        / f"_{n_epochs}epochs_loss.txt"
+    )
+
+    if checkpoint_epochs is None:
+        checkpoint_epochs = []
+    checkpoint_epochs = set(checkpoint_epochs)
+
+    if recalculateAE:
+
+        model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
+
+        loader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=(device.type == "cuda")
+        )
+
+        criterion = nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+        epoch_losses = []
+
+        print(f"Training {model_name} on {device} with batch_size={batch_size}")
+
+        for epoch in range(n_epochs):
+            model.train()
+            epoch_loss = 0.0
+
+            for (x_batch,) in loader:
+                x_batch = x_batch.to(device, non_blocking=(device.type == "cuda"))
+
+                optimizer.zero_grad()
+                x_recon, z = model(x_batch)
+                loss = criterion(x_recon, x_batch)
+                loss.backward()
+                optimizer.step()
+
+                epoch_loss += loss.item()
+
+            avg_loss = epoch_loss / len(loader)
+            epoch_losses.append(avg_loss)
+
+            current_epoch = epoch + 1
+            print(f"Epoch {current_epoch}/{n_epochs} - Loss: {avg_loss:.6f}")
+
+            if current_epoch in checkpoint_epochs:
+                checkpoint_path = (
+                    TEMPODATA_FOLDER
+                    / "autoencoder/"
+                    / simulation_name
+                    / f"_{current_epoch}epochs.pth"
+                )
+                torch.save(model.state_dict(), checkpoint_path)
+                print(f"Saved checkpoint: {checkpoint_path}")
+
+        # Save final model
+        torch.save(model.state_dict(), final_model_path)
+
+        # Save loss history
+        with open(loss_path, "w") as f:
+            for i, loss in enumerate(epoch_losses):
+                f.write(f"Epoch {i+1}: {loss}\n")
+
+        model.eval()
+
+    else:
+        model = build_autoencoder(model_name, latent_dimensions).to(device)
+        model.load_state_dict(torch.load(final_model_path, map_location=device))
+        model.eval()
+
+    return model
 
 
 ######################################################################
@@ -533,44 +639,45 @@ from src.visualization import ae_plots as aep
 # ── User choices : DATA ───────────────────────────────────────────────────────
 use_both_frames = True
 n_development = 120
-n_validation = 20
+n_validation = 0
 splitname = "split0"
 recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
 model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 120
+latent_dimensions = 240
 multiple_modelsanddims = False 
-models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
-latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
+# models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+# latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
+models_list = ["AE3dFCDeep"]
+latdim_list = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 80, 100, 130, 160, 200, 240] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
 recalculateAE = False
-load_epoch = None               # required if recalculateAE=False, e.g. load_epoch=42
-experiment_name = "optuna_AE3dFCDeep_regularisation_v1_trial35"    # "baseline" or other
-n_epochs = 200                  # maximum epochs (early stopping will likely trigger before), baseline 500
-batch_size = 1                  # baseline: 1
-patience = 45                   # baseline: 40 (before 20)
-patience_scheduler = None       # baseline : None (before 8, by default patience//5)
-lr = 4.24e-5                       # baseline: 1e-5, 1e-6 for Linear
-weight_decay = 6.47e-6              # ← 0.0 / 1e-5 / 1e-4
-dropout_rate = 0.221             # ← 0.0 / 0.1 / 0.2
-noise_std = 0.002                # ← 0.0 / 0.05 / 0.1
+load_epoch = None                       # required if a specific model result among the model/experiment_name has to be loaded
+experiment_name = "optuna"  # "baseline" or other
+n_epochs = 75                               # maximum epochs (early stopping will likely trigger before), baseline 300
+batch_size = 1                              # baseline: 1
+patience = 45                                # baseline: 40, optuna: 45
+patience_scheduler = None    # baseline : None (before 8, by default patience//5)
+lr = 4.24e-5                                     # baseline: 1e-5 (1e-6 for Linear), optuna: 4.24e-5
+weight_decay = 6.47e-6              # baseline: 0.0, optuna: 6.47e-6
+dropout_rate = 0.221                 # baseline: 0.0, optuna: 0.221 (NB: NO DROPOUT for AE3dConv nor AE3dLinear)
+noise_std = 0.002                        # baseline: 0.0, optuna 0.002
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
-plot_reconstruction = False 
-recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct
-patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
+plot_reconstruction = True 
+recons_auto = False            # Automatically choose 3 patients good/medium/bad reconstruct
+patients_torecons_manual = [(1, "ED"), (30,"ES"), (110, "ED"),(130, "ES"), (145, "ED")] # else manual choice
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 n_train_effective = n_development - n_validation
 n_train_images = n_train_effective * 2 if use_both_frames else n_train_effective
 n_val_images = n_validation * 2 if use_both_frames else n_validation
-# n_test_images = (150-n_development) * 2 if use_both_frames else (150-n_development) 
 
 train_dataset, validation_dataset, test_dataset, X_maxnorm = aet.ae_getdataset(
     n_patients=n_development,
-    validation=True,
+    validation=(n_validation > 0),
     n_validation=n_validation,
     imagesource="registered_frames", 
     use_both_frames=use_both_frames,
@@ -580,24 +687,41 @@ train_dataset, validation_dataset, test_dataset, X_maxnorm = aet.ae_getdataset(
 # ── Train (or reload) ─────────────────────────────────────────────────────────
 if not multiple_modelsanddims:
     simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
-    model, best_epoch, loss_history = aet.ae_training_early_stopping(
-        train_dataset=train_dataset,
-        validation_dataset=validation_dataset,
-        simulation_name=simulation_name,
-        model_name=model_name,
-        latent_dimensions=latent_dimensions,
-        n_epochs=n_epochs,
-        batch_size=batch_size,
-        lr=lr,
-        patience=patience,
-        patience_scheduler=patience_scheduler,
-        weight_decay=weight_decay,
-        dropout_rate=dropout_rate,
-        noise_std=noise_std,
-        recalculateAE=recalculateAE,
-        load_epoch=load_epoch,
-        experiment_name=experiment_name,
-    )
+    
+    if n_validation == 0:
+        model, best_epoch, loss_history = aet.ae_training(
+            train_dataset=train_dataset,
+            simulation_name=simulation_name,
+            model_name=model_name,
+            latent_dimensions=latent_dimensions,
+            n_epochs=n_epochs,
+            batch_size=batch_size,
+            lr=lr,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            noise_std=noise_std,
+            recalculateAE=recalculateAE,
+            experiment_name=experiment_name,
+        )
+    else:
+        model, best_epoch, loss_history = aet.ae_training_early_stopping(
+            train_dataset=train_dataset,
+            validation_dataset=validation_dataset,
+            simulation_name=simulation_name,
+            model_name=model_name,
+            latent_dimensions=latent_dimensions,
+            n_epochs=n_epochs,
+            batch_size=batch_size,
+            lr=lr,
+            patience=patience,
+            patience_scheduler=patience_scheduler,
+            weight_decay=weight_decay,
+            dropout_rate=dropout_rate,
+            noise_std=noise_std,
+            recalculateAE=recalculateAE,
+            load_epoch=load_epoch,
+            experiment_name=experiment_name,
+        )
         # ── Plot train / validation loss curves ───────────────────────────────────────
     if recalculateAE:
         aep.plot_train_val_loss(
@@ -608,7 +732,8 @@ if not multiple_modelsanddims:
         )
 
     # ── Compute R² on train and validation sets ───────────────────────────────────
-    for metrics_dataset in ["train", "validation", "test"]:
+    metrics_datasets = ["train", "test"] if n_validation == 0 else ["train", "validation", "test"]
+    for metrics_dataset in metrics_datasets:
         dataset_for_eval, patient_offset = aet.dataset_for_metrics(
             metrics_dataset,
             train_dataset,
@@ -644,24 +769,40 @@ else:
         for model_name in models_list:
             simulation_name = f"{model_name}_{n_train_images}patients_{splitname}_{latent_dimensions}dims"
 
-            model, best_epoch, loss_history = aet.ae_training_early_stopping(
-                train_dataset=train_dataset,
-                validation_dataset=validation_dataset,
-                simulation_name=simulation_name,
-                model_name=model_name,
-                latent_dimensions=latent_dimensions,
-                n_epochs=n_epochs,
-                batch_size=batch_size,
-                lr=lr,
-                patience=patience,
-                patience_scheduler=patience_scheduler,
-                weight_decay=weight_decay,
-                dropout_rate=dropout_rate,
-                noise_std=noise_std,
-                recalculateAE=recalculateAE,
-                load_epoch=load_epoch,
-                experiment_name=experiment_name,
-            )
+            if n_validation == 0:
+                model, best_epoch, loss_history = aet.ae_training(
+                    train_dataset=train_dataset,
+                    simulation_name=simulation_name,
+                    model_name=model_name,
+                    latent_dimensions=latent_dimensions,
+                    n_epochs=n_epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                    dropout_rate=dropout_rate,
+                    noise_std=noise_std,
+                    recalculateAE=recalculateAE,
+                    experiment_name=experiment_name,
+                )
+            else:
+                model, best_epoch, loss_history = aet.ae_training_early_stopping(
+                    train_dataset=train_dataset,
+                    validation_dataset=validation_dataset,
+                    simulation_name=simulation_name,
+                    model_name=model_name,
+                    latent_dimensions=latent_dimensions,
+                    n_epochs=n_epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    patience=patience,
+                    patience_scheduler=patience_scheduler,
+                    weight_decay=weight_decay,
+                    dropout_rate=dropout_rate,
+                    noise_std=noise_std,
+                    recalculateAE=recalculateAE,
+                    load_epoch=load_epoch,
+                    experiment_name=experiment_name,
+                )
         # ── Plot train / validation loss curves ───────────────────────────────────────
             if recalculateAE:
                 aep.plot_train_val_loss(
@@ -672,7 +813,8 @@ else:
                 )
 
             # ── Compute R² on train and validation sets ───────────────────────────────────
-            for metrics_dataset in ["train", "validation", "test"]:
+            metrics_datasets = ["train", "test"] if n_validation == 0 else ["train", "validation", "test"]
+            for metrics_dataset in metrics_datasets:
                 dataset_for_eval, patient_offset = aet.dataset_for_metrics(
                     metrics_dataset,
                     train_dataset,
@@ -829,28 +971,31 @@ Plot 3 — AE n_patients comparison:
 """
  
 from src.config import TEMPODATA_FOLDER, RESULTS_FOLDER
+from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
- 
+
 # ── User choices : WHICH PLOTS TO PRODUCE ────────────────────────────────────
-run_plot1_ae_comparison    = True   # AE vs AE, val set
-run_plot2_ae_vs_pca        = True   # AE vs PCA, test set (informative)
-run_plot3_npatients        = True   # AE 100 vs 200 patients comparison
- 
+run_plot1_ae_comparison        = False   # AE vs AE, val set
+run_plot2_ae_vs_pca                 = False   # AE vs PCA, test set
+run_plot3_npatients                 = False   # AE 100 vs 200 patients comparison
+run_plot4_hyper_comparison =  False # AE hyperparameter trainings comparison (optuna/baseline)
+run_stats_nepochs                      = False 
+
 # ── User choices : DATA ───────────────────────────────────────────────────────
 splitname = "split0"
  
 # ── User choices : AE (shared) ────────────────────────────────────────────────
-model_names    = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"] # ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
-experiment_name = "baseline"
+model_names    = ["AE3dFCDeep"] # ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+experiment_name = "optuna"
  
 # ── User choices : PLOT 1 & 2 (single n_patients study) ──────────────────────
 frame_tag      = "ED+ES"            # "ED" or "ED+ES"
-n_patients     = 200                # n_train_images for this study
-latdim_list_ae = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] # [4, 8, 12, 20, 28, 40, 60, 80, 100] or [4, 8, 12, 20, 28, 40, 60, 88, 120, 160]  ADD 200 later
+n_patients     = 240                # n_train_images for this study
+latdim_list_ae = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 80, 100, 130, 160, 200, 240] # [4, 8, 12, 20, 28, 40, 60, 80, 100] or [4, 8, 12, 20, 28, 40, 60, 88, 120, 160]  ADD 200 later
  
 # ── User choices : PLOT 2 — PCA ───────────────────────────────────────────────
 pca_name       = f"PCA_{n_patients}patients_{splitname}_{frame_tag}"
-latdim_list_pca = list(range(1, 200))
+latdim_list_pca = list(range(1, n_patients))
  
 # ── User choices : PLOT 3 — n_patients comparison ────────────────────────────
 n_patients_list = [100, 200]
@@ -910,6 +1055,33 @@ if run_plot3_npatients:
         metric=metric,
         xscale=xscale,
     )
+
+# ── Plot 4 — AE hyperparameter trainings comparison ────────────────────────────────────────
+if run_plot4_hyper_comparison:
+    aep.plot_ae_experiment_comparison(
+        results_folder=TEMPODATA_FOLDER / "autoencoder",
+        model_names=model_names,
+        experiment_names=["baseline", "optuna"],
+        splitname=splitname,
+        n_patients=200,
+        latdim_list=latdim_list_ae,
+        metrics_dataset="validation",
+        metric=metric,
+        xscale=xscale,
+    )
+
+# Stats on n_epochs from ae_training early stopping 
+
+if run_stats_nepochs:
+    stats = aet.get_best_epochs_stats(
+        results_folder=TEMPODATA_FOLDER / "autoencoder",
+        model_name="AE3dFCDeep",
+        n_patients_list=[n_patients],
+        splitname=splitname,
+        latdim_list=latdim_list_ae,
+        experiment_name=experiment_name,
+    )
+    aet.print_and_save_best_epochs_stats(stats,     model_name = "AE3dFCDeep", experiment_name = experiment_name)
 
 
 ######################################################################
@@ -1079,7 +1251,7 @@ from src.visualization import ae_plots as aep
 # ── User choices : DATA ───────────────────────────────────────────────────────
 source_folder = "registered_frames"
 n_development = 120                 # train + validation patients
-n_validation = 20                   # validation patients
+n_validation = 0                   # validation patients
 splitname = "split0"
 recalculateX = False
 
@@ -1098,8 +1270,8 @@ max_pc_calc = 300
 recalculatePCA = False
 
 # ── User choices : RECONSTRUCTION METRICS ────────────────────────────────────
-compute_metrics = True
-latdim_list_pca = list(range(1, 200))  # 1 to 99 or 1 to 199
+compute_metrics = False
+latdim_list_pca = list(range(1, 240))  # 1 to 99 or 1 to 199
 
 # ── User choices : STANDALONE PLOTS ──────────────────────────────────────────
 plot_explained_variance = False
@@ -1111,10 +1283,10 @@ pc_n1, pc_n2 = 0, 1                # PC indices for 2D plots
 eigenvectors_toplot = 10
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────── 
-plot_reconstruction    = False      # set True to reconstruct and plot selected patients
-latent_dim_plot = 120         # latent dim to use for reconstruction
-recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
-patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
+plot_reconstruction    = True      # set True to reconstruct and plot selected patients
+latent_dim_plot = 240         # latent dim to use for reconstruction
+recons_auto = False            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
+patients_torecons_manual = [(1, "ED"), (30,"ES"), (110, "ED"),(130, "ES"), (145, "ED")] # else manual choice
 
 # ── Derived parameters ────────────────────────────────────────────────────────
 n_train = n_development - n_validation
@@ -1183,17 +1355,22 @@ pca, X_train_pca, meta = pcs.pca_patients(
 )
 
 # Project val and test into PCA space
-X_val_pca  = pca.transform(X_val)
+X_val_pca = pca.transform(X_val) if len(X_val) > 0 else np.array([])
 X_test_pca = pca.transform(X_test)
 
 # ── Reconstruction metrics ────────────────────────────────────────────────────
 if compute_metrics:
 
-    for metrics_dataset, X_flat, X_pca_sub, offset in [
-        ("train",      X_train, X_train_pca, 0),
-        ("validation", X_val,   X_val_pca,   n_train_images),
-        ("test",       X_test,  X_test_pca,  n_train_images + n_val_images),
-    ]:
+    datasets_to_compute = (
+    [("train", X_train, X_train_pca, 0),
+     ("test",  X_test,  X_test_pca,  n_train_images)]
+    if n_validation == 0 else
+    [("train",      X_train, X_train_pca, 0),
+     ("validation", X_val,   X_val_pca,   n_train_images),
+     ("test",       X_test,  X_test_pca,  n_train_images + n_val_images)]
+    )
+
+    for metrics_dataset, X_flat, X_pca_sub, offset in datasets_to_compute:
         for latent_dimensions in latdim_list_pca:
             pcs.pca_compute_metrics(
                 X_flat=X_flat,
@@ -3230,7 +3407,7 @@ class AutoEncoder3D_Current(nn.Module):
     -> flatten 65536 -> latent_dim
     """
 
-    def __init__(self, latent_dim=10, input_shape=(1, 32, 128, 128)):
+    def __init__(self, latent_dim=10, input_shape=(1, 32, 128, 128), dropout_rate=0.0):
         super().__init__()
 
         self.latent_dim = latent_dim
@@ -4791,6 +4968,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from pathlib import Path
 
 from src.config import TEMPODATA_FOLDER, RESULTS_FOLDER
 from src.models import pca_spatial as pcs
@@ -4949,7 +5127,7 @@ def dataset_for_metrics(metrics_dataset, train_dataset, validation_dataset, test
     return dataset, patient_offset
 
 
-def ae_training(
+def ae_training_old(
     dataset,
     simulation_name,
     model_name,
@@ -5057,6 +5235,151 @@ def ae_training(
 
     return model
 
+
+def ae_training(
+    train_dataset,
+    simulation_name,
+    model_name,
+    latent_dimensions,
+    n_epochs=75,
+    batch_size=1,
+    lr=1e-5,
+    weight_decay=0.0,
+    dropout_rate=0.0,
+    noise_std=0.0,
+    recalculateAE=True,
+    experiment_name="optuna",
+):
+    """
+    Train the 3D autoencoder for a fixed number of epochs (no early stopping).
+    Used when training on the full dataset (no validation set available).
+
+    Parameters
+    ----------
+    train_dataset : TensorDataset
+    simulation_name : str
+        e.g. "AE3dFCDeep_240patients_split0_120dims"
+    model_name : str
+    latent_dimensions : int
+    n_epochs : int
+        Fixed number of training epochs. Default 75.
+    batch_size : int
+    lr : float
+    weight_decay : float
+        L2 regularisation coefficient. Default 0.0.
+    dropout_rate : float
+        Dropout probability on FC layers. Default 0.0.
+    noise_std : float
+        Std of Gaussian noise for denoising AE. Default 0.0.
+    recalculateAE : bool
+        If False, load existing model instead of training.
+    experiment_name : str
+        Subfolder name, e.g. "optuna_allpatients".
+
+    Returns
+    -------
+    model : nn.Module
+        Trained model in eval mode.
+    n_epochs : int
+        Number of epochs trained (fixed, returned for consistency with
+        ae_training_early_stopping interface).
+    loss_history : dict
+        {"train": [float, ...]} — one value per epoch.
+
+    Saved files
+    -----------
+    tempodata/autoencoder/{simulation_name}/{experiment_name}/_best_{n_epochs}epochs.pth
+    tempodata/autoencoder/{simulation_name}/{experiment_name}/_best_{n_epochs}epochs_loss.txt
+    """
+    device = get_device()
+    output_dir = TEMPODATA_FOLDER / "autoencoder" / simulation_name / experiment_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    final_path = output_dir / f"_best_{n_epochs}epochs.pth"
+    loss_path  = output_dir / f"_best_{n_epochs}epochs_loss.txt"
+
+    # ── Load existing model ───────────────────────────────────────────────────
+    if not recalculateAE:
+        if not final_path.exists():
+            raise FileNotFoundError(f"Model file not found: {final_path}")
+
+        print(f"Loading existing model: {final_path}")
+        model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
+        model.load_state_dict(torch.load(final_path, map_location=device))
+        model.eval()
+
+        loss_history = {"train": []}
+        if loss_path.exists():
+            with open(loss_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("train:"):
+                        loss_history["train"].append(float(line.replace("train:", "").strip()))
+
+        return model, n_epochs, loss_history
+
+    # ── Training ──────────────────────────────────────────────────────────────
+    model = build_autoencoder(model_name, latent_dimensions, dropout_rate=dropout_rate).to(device)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        pin_memory=(device.type == "cuda"),
+    )
+
+    criterion  = nn.MSELoss()
+    optimizer  = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    loss_history = {"train": []}
+
+    print(
+        f"Training {model_name} | device={device} | "
+        f"batch_size={batch_size} | n_epochs={n_epochs} | lr={lr:.2e} | "
+        f"weight_decay={weight_decay:.2e} | dropout={dropout_rate:.2f} | "
+        f"noise_std={noise_std:.4f}"
+    )
+
+    for epoch in range(n_epochs):
+        model.train()
+        epoch_train_loss = 0.0
+
+        for (x_batch,) in train_loader:
+            x_batch = x_batch.to(device, non_blocking=(device.type == "cuda"))
+
+            # Denoising AE
+            if noise_std > 0.0:
+                x_noisy = x_batch + torch.randn_like(x_batch) * noise_std
+                x_noisy = torch.clamp(x_noisy, 0.0, 1.0)
+            else:
+                x_noisy = x_batch
+
+            optimizer.zero_grad()
+            x_recon, _ = model(x_noisy)
+            loss = criterion(x_recon, x_batch)   # target = clean image
+            loss.backward()
+            optimizer.step()
+            epoch_train_loss += loss.item()
+
+        avg_train_loss = epoch_train_loss / len(train_loader)
+        loss_history["train"].append(avg_train_loss)
+
+        print(
+            f"Epoch {epoch + 1}/{n_epochs} | train: {avg_train_loss:.6f} | lr: {lr:.2e}"
+        )
+
+    # ── Save model ────────────────────────────────────────────────────────────
+    torch.save(model.state_dict(), final_path)
+    print(f"Model saved: {final_path}")
+
+    # ── Save loss history ─────────────────────────────────────────────────────
+    with open(loss_path, "w") as f:
+        f.write(f"n_epochs: {n_epochs}\n\n")
+        for tl in loss_history["train"]:
+            f.write(f"train: {tl}\n")
+
+    model.eval()
+    return model, n_epochs, loss_history
 
 def ae_reconstructX(patient_tensor, X_maxnorm, model):
     """
@@ -5452,6 +5775,157 @@ def ae_training_early_stopping(
     model.eval()
  
     return model, best_epoch, loss_history
+
+
+def get_best_epochs_stats(
+    results_folder,
+    model_name,
+    n_patients_list,
+    splitname,
+    latdim_list,
+    experiment_name,
+):
+    """
+    Retrieve best_epoch stats across n_patients / latent_dims combinations
+    for a given model and experiment.
+
+    Returns a dict with keys (n_patients, latent_dim) → stats dict.
+    Stats: epochs list, mean, median, std, min, max.
+
+    Parameters
+    ----------
+    results_folder : Path
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    model_name : str
+        e.g. "AE3dFCDeep"
+    n_patients_list : list of int
+        e.g. [200] or [100, 200]
+    splitname : str
+        e.g. "split0"
+    latdim_list : list of int
+        e.g. [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200]
+    experiment_name : str
+        e.g. "optuna"
+
+    Returns
+    -------
+    dict : {(n_patients, latent_dim): {
+                "epochs": list,
+                "mean": float,
+                "median": float,
+                "std": float,
+                "min": int,
+                "max": int,
+            }}
+    """
+    import numpy as np
+    results_folder = Path(results_folder)
+    stats = {}
+
+    for n_patients in n_patients_list:
+        for latent_dim in latdim_list:
+            simulation_name = (
+                f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+            )
+            model_dir = results_folder / simulation_name / experiment_name
+
+            if not model_dir.exists():
+                continue
+
+            pth_files = sorted(
+                model_dir.glob("_best_*epochs.pth"),
+                key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+            )
+
+            if not pth_files:
+                continue
+
+            epochs = [
+                int(p.stem.replace("_best_", "").replace("epochs", ""))
+                for p in pth_files
+            ]
+
+            stats[(n_patients, latent_dim)] = {
+                "epochs": epochs,
+                "mean":   float(np.mean(epochs)),
+                "median": float(np.median(epochs)),
+                "std":    float(np.std(epochs)),
+                "min":    int(np.min(epochs)),
+                "max":    int(np.max(epochs)),
+            }
+
+    return stats
+
+def print_and_save_best_epochs_stats(
+    stats,
+    model_name,
+    experiment_name,
+    results_folder_save=None,
+):
+    """
+    Print and save best_epoch stats.
+    - Per row: one (n_patients, latent_dim) combination with its epoch(s)
+    - Aggregated stats at the bottom across all dims for each n_patients group.
+
+    Parameters
+    ----------
+    stats : dict
+        Output of get_best_epochs_stats.
+    model_name : str
+    experiment_name : str
+    results_folder_save : Path or None
+        If None, uses RESULTS_FOLDER.
+    """
+    import numpy as np
+    from src.config import RESULTS_FOLDER
+
+    results_folder_save = Path(results_folder_save) if results_folder_save else RESULTS_FOLDER
+
+    lines = []
+    lines.append(f"Best epoch stats — {model_name} | {experiment_name}")
+    lines.append("=" * 60)
+    lines.append(f"{'n_patients':>12} {'latent_dim':>12} {'epochs':>20}")
+    lines.append("-" * 46)
+
+    # Group by n_patients for aggregated stats
+    from collections import defaultdict
+    epochs_by_npatients = defaultdict(list)
+
+    for (n_patients, latent_dim), s in sorted(stats.items()):
+        lines.append(
+            f"{n_patients:>12} {latent_dim:>12} {str(s['epochs']):>20}"
+        )
+        epochs_by_npatients[n_patients].extend(s["epochs"])
+
+    # Aggregated stats per n_patients group
+    lines.append("")
+    lines.append("Aggregated stats across all latent dims")
+    lines.append("-" * 60)
+    lines.append(
+        f"{'n_patients':>12} {'mean':>8} {'median':>8} "
+        f"{'std':>8} {'min':>6} {'max':>6}"
+    )
+    lines.append("-" * 52)
+
+    for n_patients, all_epochs in sorted(epochs_by_npatients.items()):
+        lines.append(
+            f"{n_patients:>12} "
+            f"{np.mean(all_epochs):>8.1f} {np.median(all_epochs):>8.1f} "
+            f"{np.std(all_epochs):>8.1f} {int(np.min(all_epochs)):>6} "
+            f"{int(np.max(all_epochs)):>6}"
+        )
+
+    lines.append("=" * 60)
+
+    # Print
+    for line in lines:
+        print(line)
+
+    # Save
+    save_path = results_folder_save / f"best_epochs_stats_{model_name}_{experiment_name}.txt"
+    with open(save_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"\nSaved: {save_path}")
 
 
 ######################################################################
@@ -6559,7 +7033,6 @@ def plot_train_val_loss(
         If None, saves as {RESULTS_FOLDER}/{simulation_name}_train_val_loss.png
     """
     train_losses = np.array(loss_history["train"], dtype=float)
-    val_losses = np.array(loss_history["validation"], dtype=float)
     epochs = np.arange(1, len(train_losses) + 1)
  
     if save_path is None:
@@ -6568,15 +7041,18 @@ def plot_train_val_loss(
     fig, ax = plt.subplots(figsize=(9, 5))
  
     ax.plot(epochs, train_losses, linewidth=1.5, label="Train loss")
-    ax.plot(epochs, val_losses, linewidth=1.5, label="Validation loss")
- 
-    ax.axvline(
-        x=best_epoch,
-        color="red",
-        linestyle="--",
-        linewidth=1.2,
-        label=f"Best epoch ({best_epoch})"
-    )
+
+    # Validation loss — optionnel
+    if "validation" in loss_history and len(loss_history["validation"]) > 0:
+        val_losses = np.array(loss_history["validation"], dtype=float)
+        ax.plot(epochs, val_losses, linewidth=1.5, label="Validation loss")
+        ax.axvline(
+            x=best_epoch,
+            color="red",
+            linestyle="--",
+            linewidth=1.2,
+            label=f"Best epoch ({best_epoch})",
+        )
  
     ax.set_yscale("log")
     ax.set_xlabel("Epoch")
@@ -7013,6 +7489,123 @@ def plot_ae_npatients_comparison(
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {save_path}")
+
+def plot_ae_experiment_comparison(
+    results_folder,
+    model_names,
+    experiment_names,
+    splitname,
+    n_patients,
+    latdim_list,
+    metrics_dataset="validation",
+    metric="R2",
+    xscale="log",
+    save_path=None,
+):
+    """
+    Compare AE architectures trained with different experiment setups
+    (e.g. baseline vs optuna hyperparameters).
+
+    Style encoding:
+      - Color     → architecture (orange=AE3dCurrent, green=AE3dFCDeep, blue=AE3dConv)
+      - Linestyle → experiment: dotted for first, solid for second
+      - Marker    → experiment: 'o' for first, 's' for second
+
+    Parameters
+    ----------
+    results_folder : Path or str
+        Path to TEMPODATA_FOLDER / "autoencoder".
+    model_names : list of str
+        AE architectures to plot, e.g. ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"].
+    experiment_names : list of str
+        e.g. ["baseline", "optuna"] — must have exactly 2 elements.
+    splitname : str
+        e.g. "split0"
+    n_patients : int
+        Number of train patients, e.g. 200.
+    latdim_list : list of int
+        Latent dimensions to plot.
+    metrics_dataset : str
+        "train", "validation", or "test".
+    metric : str
+        Metric to plot. Default "R2".
+    xscale : str
+        "log" or "linear".
+    save_path : Path or str or None
+    """
+    results_folder = Path(results_folder)
+
+    color_map = {
+        "AE3dCurrent": "orange",
+        "AE3dFCDeep":  "green",
+        "AE3dConv":    "blue",
+        "AE3dLinear":  "purple",
+    }
+
+    linestyle_map = {exp: ls for exp, ls in zip(experiment_names, ["dotted", "solid"])}
+    marker_map    = {exp: m  for exp, m  in zip(experiment_names, ["o", "s"])}
+    linewidth_map = {exp: lw for exp, lw in zip(experiment_names, [1.5, 2.5])}
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    for model_name in model_names:
+        color = color_map.get(model_name, "gray")
+
+        for experiment_name in experiment_names:
+            values, dims = [], []
+
+            for latent_dim in latdim_list:
+                simulation_name = f"{model_name}_{n_patients}patients_{splitname}_{latent_dim}dims"
+                model_dir = results_folder / simulation_name / experiment_name
+                pth_files = sorted(
+                    model_dir.glob("_best_*epochs.pth"),
+                    key=lambda p: int(p.stem.replace("_best_", "").replace("epochs", ""))
+                ) if model_dir.exists() else []
+                if len(pth_files) == 0:
+                    continue
+                best_epoch = int(pth_files[-1].stem.replace("_best_", "").replace("epochs", ""))
+
+                m = _load_summarymetrics(
+                    results_folder, simulation_name, experiment_name, best_epoch, metrics_dataset
+                )
+                if m is not None and metric in m:
+                    values.append(m[metric])
+                    dims.append(latent_dim)
+
+            if dims:
+                ax.plot(
+                    dims, values,
+                    color=color,
+                    linewidth=linewidth_map[experiment_name],
+                    linestyle=linestyle_map[experiment_name],
+                    marker=marker_map[experiment_name],
+                    markersize=5,
+                    label=f"{model_name} ({experiment_name})",
+                )
+
+    ax.set_xlabel("Latent dimension")
+    ax.set_ylabel(metric)
+    ax.set_xscale(xscale)
+    ax.set_title(
+        f"AE comparison — baseline vs optuna | {metric} | {metrics_dataset} set\n"
+        f"{splitname} | {n_patients} patients"
+    )
+    ax.set_xticks(latdim_list)
+    ax.set_xticklabels([str(d) for d in latdim_list], rotation=45, fontsize=8)
+    ax.legend(ncol=2, fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+
+    if save_path is None:
+        exp_str = "_vs_".join(experiment_names)
+        save_path = RESULTS_FOLDER / (
+            f"AEexperiment_comparison_{metric}_{metrics_dataset}_{splitname}"
+            f"_{n_patients}patients_{exp_str}.png"
+        )
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {save_path}")
+
 
 def pca_plotcompare_selected(
     patients_torecons,

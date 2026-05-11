@@ -22,7 +22,7 @@ from src.visualization import ae_plots as aep
 # ── User choices : DATA ───────────────────────────────────────────────────────
 source_folder = "registered_frames"
 n_development = 120                 # train + validation patients
-n_validation = 20                   # validation patients
+n_validation = 0                   # validation patients
 splitname = "split0"
 recalculateX = False
 
@@ -41,8 +41,8 @@ max_pc_calc = 300
 recalculatePCA = False
 
 # ── User choices : RECONSTRUCTION METRICS ────────────────────────────────────
-compute_metrics = True
-latdim_list_pca = list(range(1, 200))  # 1 to 99 or 1 to 199
+compute_metrics = False
+latdim_list_pca = list(range(1, 240))  # 1 to 99 or 1 to 199
 
 # ── User choices : STANDALONE PLOTS ──────────────────────────────────────────
 plot_explained_variance = False
@@ -54,10 +54,10 @@ pc_n1, pc_n2 = 0, 1                # PC indices for 2D plots
 eigenvectors_toplot = 10
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────── 
-plot_reconstruction    = False      # set True to reconstruct and plot selected patients
-latent_dim_plot = 120         # latent dim to use for reconstruction
-recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
-patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
+plot_reconstruction    = True      # set True to reconstruct and plot selected patients
+latent_dim_plot = 240         # latent dim to use for reconstruction
+recons_auto = False            # Automatically choose 3 patients good/medium/bad reconstruct in the train/val/test
+patients_torecons_manual = [(1, "ED"), (30,"ES"), (110, "ED"),(130, "ES"), (145, "ED")] # else manual choice
 
 # ── Derived parameters ────────────────────────────────────────────────────────
 n_train = n_development - n_validation
@@ -126,17 +126,22 @@ pca, X_train_pca, meta = pcs.pca_patients(
 )
 
 # Project val and test into PCA space
-X_val_pca  = pca.transform(X_val)
+X_val_pca = pca.transform(X_val) if len(X_val) > 0 else np.array([])
 X_test_pca = pca.transform(X_test)
 
 # ── Reconstruction metrics ────────────────────────────────────────────────────
 if compute_metrics:
 
-    for metrics_dataset, X_flat, X_pca_sub, offset in [
-        ("train",      X_train, X_train_pca, 0),
-        ("validation", X_val,   X_val_pca,   n_train_images),
-        ("test",       X_test,  X_test_pca,  n_train_images + n_val_images),
-    ]:
+    datasets_to_compute = (
+    [("train", X_train, X_train_pca, 0),
+     ("test",  X_test,  X_test_pca,  n_train_images)]
+    if n_validation == 0 else
+    [("train",      X_train, X_train_pca, 0),
+     ("validation", X_val,   X_val_pca,   n_train_images),
+     ("test",       X_test,  X_test_pca,  n_train_images + n_val_images)]
+    )
+
+    for metrics_dataset, X_flat, X_pca_sub, offset in datasets_to_compute:
         for latent_dimensions in latdim_list_pca:
             pcs.pca_compute_metrics(
                 X_flat=X_flat,

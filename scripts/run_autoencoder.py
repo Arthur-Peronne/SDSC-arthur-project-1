@@ -17,15 +17,15 @@ recalculateX = False
 
 # ── User choices : MODEL ──────────────────────────────────────────────────────
 model_name = "AE3dFCDeep"         # "AE3dCurrent", "AE3dFCDeep", "AE3dConv", "AE3dLinear"
-latent_dimensions = 200
-multiple_modelsanddims = True 
+latent_dimensions = 240
+multiple_modelsanddims = False 
 # models_list = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
 # latdim_list = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 models_list = ["AE3dFCDeep"]
 latdim_list = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 80, 100, 130, 160, 200, 240] if use_both_frames else [4, 8, 12, 20, 28, 40, 60, 80, 100]
 
 # ── User choices : TRAINING ───────────────────────────────────────────────────
-recalculateAE = True
+recalculateAE = False
 load_epoch = None                       # required if a specific model result among the model/experiment_name has to be loaded
 experiment_name = "optuna"  # "baseline" or other
 n_epochs = 75                               # maximum epochs (early stopping will likely trigger before), baseline 300
@@ -38,9 +38,9 @@ dropout_rate = 0.221                 # baseline: 0.0, optuna: 0.221 (NB: NO DROP
 noise_std = 0.002                        # baseline: 0.0, optuna 0.002
 
 # ── User choices : RECONSTRUCTION ───────────────────────────────────────────────────
-plot_reconstruction = False 
-recons_auto = True            # Automatically choose 3 patients good/medium/bad reconstruct
-patients_torecons_manual = [(30,"ES"), (110, "ED"),(130, "ED")] # else manual choice
+plot_reconstruction = True 
+recons_auto = False            # Automatically choose 3 patients good/medium/bad reconstruct
+patients_torecons_manual = [(1, "ED"), (30,"ES"), (110, "ED"),(130, "ES"), (145, "ED")] # else manual choice
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 n_train_effective = n_development - n_validation

@@ -20,27 +20,27 @@ from src.training import ae_training as aet
 from src.visualization import ae_plots as aep
 
 # ── User choices : WHICH PLOTS TO PRODUCE ────────────────────────────────────
-run_plot1_ae_comparison        = True   # AE vs AE, val set
-run_plot2_ae_vs_pca                 = True   # AE vs PCA, test set (informative)
+run_plot1_ae_comparison        = False   # AE vs AE, val set
+run_plot2_ae_vs_pca                 = False   # AE vs PCA, test set
 run_plot3_npatients                 = False   # AE 100 vs 200 patients comparison
-run_plot4_hyper_comparison =  True # AE hyperparameter trainings comparison (optuna/baseline)
-run_stats_nepochs                      = True 
+run_plot4_hyper_comparison =  False # AE hyperparameter trainings comparison (optuna/baseline)
+run_stats_nepochs                      = False 
 
 # ── User choices : DATA ───────────────────────────────────────────────────────
 splitname = "split0"
  
 # ── User choices : AE (shared) ────────────────────────────────────────────────
-model_names    = ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"] # ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
+model_names    = ["AE3dFCDeep"] # ["AE3dCurrent", "AE3dFCDeep", "AE3dConv"]
 experiment_name = "optuna"
  
 # ── User choices : PLOT 1 & 2 (single n_patients study) ──────────────────────
 frame_tag      = "ED+ES"            # "ED" or "ED+ES"
-n_patients     = 200                # n_train_images for this study
-latdim_list_ae = [4, 8, 12, 20, 28, 40, 60, 88, 120, 160, 200] # [4, 8, 12, 20, 28, 40, 60, 80, 100] or [4, 8, 12, 20, 28, 40, 60, 88, 120, 160]  ADD 200 later
+n_patients     = 240                # n_train_images for this study
+latdim_list_ae = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30, 40, 60, 80, 100, 130, 160, 200, 240] # [4, 8, 12, 20, 28, 40, 60, 80, 100] or [4, 8, 12, 20, 28, 40, 60, 88, 120, 160]  ADD 200 later
  
 # ── User choices : PLOT 2 — PCA ───────────────────────────────────────────────
 pca_name       = f"PCA_{n_patients}patients_{splitname}_{frame_tag}"
-latdim_list_pca = list(range(1, 200))
+latdim_list_pca = list(range(1, n_patients))
  
 # ── User choices : PLOT 3 — n_patients comparison ────────────────────────────
 n_patients_list = [100, 200]

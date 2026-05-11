@@ -66,10 +66,13 @@ SDSC-arthur-project-1/
 │   ├── __init__.py
 │   └── config.py  # Central configuration — paths loaded from environment variables.
 ├── README.md
+├── backup_results.tar.gz
 ├── pyproject.toml
 ├── requirements-OLD.txt
 ├── requirements.txt
-└── requirements_locked.txt
+├── requirements_locked.txt
+├── setup_env.sh
+└── shortcut_AP.txt
 
 ======================================================================
 DETAILED DOCSTRINGS PER FILE
